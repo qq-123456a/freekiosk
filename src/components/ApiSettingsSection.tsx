@@ -17,7 +17,6 @@ import SettingsSection from './settings/SettingsSection';
 import SettingsSwitch from './settings/SettingsSwitch';
 import SettingsInput from './settings/SettingsInput';
 import Icon from './Icon';
-import ScheduledRebootSection from './ScheduledRebootSection';
 import { StorageService } from '../utils/storage';
 import { httpServer } from '../utils/HttpServerModule';
 
@@ -36,10 +35,12 @@ export const ApiSettingsSection: React.FC<ApiSettingsSectionProps> = ({
   const [localIp, setLocalIp] = useState('0.0.0.0');
   const [isLoading, setIsLoading] = useState(false);
 
+  // Load settings on mount
   useEffect(() => {
     loadSettings();
   }, []);
 
+  // Check server status periodically
   useEffect(() => {
     const checkStatus = async () => {
       const running = await httpServer.isRunning();
@@ -68,13 +69,19 @@ export const ApiSettingsSection: React.FC<ApiSettingsSectionProps> = ({
     setApiKey(key);
     setAllowControl(control);
 
+    // Always sync server state with stored settings.
+    // If the server is already running (started by KioskScreen) but with a stale config
+    // (e.g. a previously-set API key that was later cleared), restart it so that the
+    // running server always reflects what is shown in the settings UI.
     const isRunning = await httpServer.isRunning();
     if (enabled) {
       if (isRunning) {
+        // Stop the potentially-stale instance, then start fresh with current settings.
         try { await httpServer.stopServer(); } catch (_) { /* ignore */ }
       }
       startServer(port, key, control);
     } else if (isRunning) {
+      // API was disabled while server was left running – stop it.
       await stopServer();
     }
   };
@@ -124,11 +131,14 @@ export const ApiSettingsSection: React.FC<ApiSettingsSectionProps> = ({
     const port = parseInt(value, 10);
     if (!isNaN(port) && port >= 1024 && port <= 65535) {
       await StorageService.saveRestApiPort(port);
+      
+      // Restart server if it is actually running (avoid stale React state)
       const isCurrentlyRunning = await httpServer.isRunning();
       if (isCurrentlyRunning) {
         await stopServer();
         await startServer(port, apiKey, allowControl);
       }
+      
       onSettingsChanged?.();
     }
   };
@@ -136,24 +146,30 @@ export const ApiSettingsSection: React.FC<ApiSettingsSectionProps> = ({
   const handleApiKeyChange = async (value: string) => {
     setApiKey(value);
     await StorageService.saveRestApiKey(value);
+    
+    // Restart server if it is actually running (avoid stale React state)
     const isCurrentlyRunning = await httpServer.isRunning();
     if (isCurrentlyRunning) {
       const port = parseInt(apiPort, 10) || 8080;
       await stopServer();
       await startServer(port, value, allowControl);
     }
+    
     onSettingsChanged?.();
   };
 
   const handleAllowControlChange = async (value: boolean) => {
     setAllowControl(value);
     await StorageService.saveRestApiAllowControl(value);
+    
+    // Restart server if it is actually running (avoid stale React state)
     const isCurrentlyRunning = await httpServer.isRunning();
     if (isCurrentlyRunning) {
       const port = parseInt(apiPort, 10) || 8080;
       await stopServer();
       await startServer(port, apiKey, value);
     }
+    
     onSettingsChanged?.();
   };
 
@@ -177,155 +193,164 @@ export const ApiSettingsSection: React.FC<ApiSettingsSectionProps> = ({
   };
 
   return (
-    <>
-      <SettingsSection title="REST API" icon="api">
-        <SettingsSwitch
-          label="Enable REST API"
-          value={apiEnabled}
-          onValueChange={handleApiEnabledChange}
-          icon="server-network"
-        />
+    <SettingsSection
+      title="REST API"
+      icon="api"
+    >
+      <SettingsSwitch
+        label="Enable REST API"
+        value={apiEnabled}
+        onValueChange={handleApiEnabledChange}
+        icon="server-network"
+      />
 
-        {apiEnabled && (
-          <>
-            <View style={styles.statusContainer}>
-              <View style={styles.statusRow}>
-                <View style={[
-                  styles.statusIndicator,
-                  { backgroundColor: serverRunning ? '#4CAF50' : '#F44336' }
-                ]} />
-                <Text style={styles.statusText}>
-                  {isLoading ? 'Starting...' : serverRunning ? 'Server Running' : 'Server Stopped'}
-                </Text>
-                {isLoading && <ActivityIndicator size="small" color="#007AFF" style={styles.loader} />}
-              </View>
-
-              {serverRunning && (
-                <TouchableOpacity
-                  style={styles.urlContainer}
-                  onPress={() => copyToClipboard(getApiUrl(), 'API URL')}
-                >
-                  <Icon name="link" size={16} color="#007AFF" />
-                  <Text style={styles.urlText}>{getApiUrl()}</Text>
-                  <Icon name="content-copy" size={16} color="#999" />
-                </TouchableOpacity>
-              )}
-            </View>
-
-            <SettingsInput
-              label="Port"
-              value={apiPort}
-              onChangeText={handlePortChange}
-              placeholder="8080"
-              keyboardType="numeric"
-              icon="numeric"
-              hint="Port 1024-65535 (default: 8080)"
-            />
-
-            <View style={styles.apiKeyContainer}>
-              <SettingsInput
-                label="API Key (optional)"
-                value={apiKey}
-                onChangeText={handleApiKeyChange}
-                placeholder="Leave empty for no authentication"
-                secureTextEntry
-                icon="key-variant"
-                hint="Used as X-Api-Key header"
-              />
-              <View style={styles.apiKeyButtons}>
-                <TouchableOpacity style={styles.smallButton} onPress={generateApiKey}>
-                  <Icon name="refresh" size={16} color="#007AFF" />
-                  <Text style={styles.smallButtonText}>Generate</Text>
-                </TouchableOpacity>
-                {apiKey ? (
-                  <TouchableOpacity
-                    style={styles.smallButton}
-                    onPress={() => copyToClipboard(apiKey, 'API Key')}
-                  >
-                    <Icon name="content-copy" size={16} color="#007AFF" />
-                    <Text style={styles.smallButtonText}>Copy</Text>
-                  </TouchableOpacity>
-                ) : null}
-              </View>
-            </View>
-
-            <SettingsSwitch
-              label="Allow Remote Control"
-              value={allowControl}
-              onValueChange={handleAllowControlChange}
-              icon="remote"
-              hint="Enable POST commands (brightness, reload, etc.)"
-            />
-
-            <View style={styles.endpointsContainer}>
-              <Text style={styles.endpointsTitle}>Available Endpoints:</Text>
-              <View style={styles.endpointCategory}>
-                <Text style={styles.categoryLabel}>GET (Read-only)</Text>
-                <Text style={styles.endpoint}>/api/status - Full device status</Text>
-                <Text style={styles.endpoint}>/api/battery - Battery info</Text>
-                <Text style={styles.endpoint}>/api/brightness - Current brightness</Text>
-                <Text style={styles.endpoint}>/api/screen - Screen state</Text>
-                <Text style={styles.endpoint}>/api/info - Device info</Text>
-                <Text style={styles.endpoint}>/api/health - Health check</Text>
-                <Text style={styles.endpoint}>/api/sensors - Light, proximity, accelerometer</Text>
-                <Text style={styles.endpoint}>/api/storage - Storage info</Text>
-                <Text style={styles.endpoint}>/api/memory - RAM info</Text>
-                <Text style={styles.endpoint}>/api/wifi - WiFi status</Text>
-                <Text style={styles.endpoint}>/api/screenshot - Capture screen (PNG)</Text>
-              </View>
-
-              {allowControl && (
-                <View style={styles.endpointCategory}>
-                  <Text style={styles.categoryLabel}>POST (Control)</Text>
-                  <Text style={styles.endpoint}>/api/brightness - Set brightness</Text>
-                  <Text style={styles.endpoint}>/api/screen/on - Turn screen on</Text>
-                  <Text style={styles.endpoint}>/api/screen/off - Turn screen off</Text>
-                  <Text style={styles.endpoint}>/api/screensaver/on - Enable screensaver</Text>
-                  <Text style={styles.endpoint}>/api/screensaver/off - Disable screensaver</Text>
-                  <Text style={styles.endpoint}>/api/reload - Reload WebView</Text>
-                  <Text style={styles.endpoint}>/api/url - Navigate to URL</Text>
-                  <Text style={styles.endpoint}>/api/wake - Wake from screensaver</Text>
-                  <Text style={styles.endpoint}>/api/tts - Text to speech</Text>
-                  <Text style={styles.endpoint}>/api/volume - Set volume</Text>
-                  <Text style={styles.endpoint}>/api/toast - Show toast message</Text>
-                  <Text style={styles.endpoint}>/api/js - Execute JavaScript</Text>
-                  <Text style={styles.endpoint}>/api/clearCache - Clear WebView cache</Text>
-                  <Text style={styles.endpoint}>/api/app/launch - Launch external app</Text>
-                  <Text style={styles.endpoint}>/api/reboot - Reboot (Device Owner)</Text>
-                  <Text style={styles.endpoint}>/api/audio/play - Play audio URL</Text>
-                  <Text style={styles.endpoint}>/api/audio/stop - Stop audio</Text>
-                  <Text style={styles.endpoint}>/api/audio/beep - Play beep sound</Text>
-                </View>
-              )}
-
-              {allowControl && (
-                <View style={styles.endpointCategory}>
-                  <Text style={styles.categoryLabel}>POST (Remote Control - Android TV)</Text>
-                  <Text style={styles.endpoint}>/api/remote/up - D-pad up</Text>
-                  <Text style={styles.endpoint}>/api/remote/down - D-pad down</Text>
-                  <Text style={styles.endpoint}>/api/remote/left - D-pad left</Text>
-                  <Text style={styles.endpoint}>/api/remote/right - D-pad right</Text>
-                  <Text style={styles.endpoint}>/api/remote/select - Select/Enter</Text>
-                  <Text style={styles.endpoint}>/api/remote/back - Back button</Text>
-                  <Text style={styles.endpoint}>/api/remote/home - Home button</Text>
-                  <Text style={styles.endpoint}>/api/remote/menu - Menu button</Text>
-                  <Text style={styles.endpoint}>/api/remote/playpause - Play/Pause</Text>
-                </View>
-              )}
-            </View>
-
-            <View style={styles.hintContainer}>
-              <Icon name="home-assistant" size={20} color="#41BDF5" />
-              <Text style={styles.hintText}>
-                Use with Home Assistant's RESTful integration. See documentation for configuration examples.
+      {apiEnabled && (
+        <>
+          {/* Server Status */}
+          <View style={styles.statusContainer}>
+            <View style={styles.statusRow}>
+              <View style={[
+                styles.statusIndicator,
+                { backgroundColor: serverRunning ? '#4CAF50' : '#F44336' }
+              ]} />
+              <Text style={styles.statusText}>
+                {isLoading ? 'Starting...' : serverRunning ? 'Server Running' : 'Server Stopped'}
               </Text>
+              {isLoading && <ActivityIndicator size="small" color="#007AFF" style={styles.loader} />}
             </View>
-          </>
-        )}
-      </SettingsSection>
 
-      <ScheduledRebootSection />
-    </>
+            {serverRunning && (
+              <TouchableOpacity
+                style={styles.urlContainer}
+                onPress={() => copyToClipboard(getApiUrl(), 'API URL')}
+              >
+                <Icon name="link" size={16} color="#007AFF" />
+                <Text style={styles.urlText}>{getApiUrl()}</Text>
+                <Icon name="content-copy" size={16} color="#999" />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Port Setting */}
+          <SettingsInput
+            label="Port"
+            value={apiPort}
+            onChangeText={handlePortChange}
+            placeholder="8080"
+            keyboardType="numeric"
+            icon="numeric"
+            hint="Port 1024-65535 (default: 8080)"
+          />
+
+          {/* API Key */}
+          <View style={styles.apiKeyContainer}>
+            <SettingsInput
+              label="API Key (optional)"
+              value={apiKey}
+              onChangeText={handleApiKeyChange}
+              placeholder="Leave empty for no authentication"
+              secureTextEntry
+              icon="key-variant"
+              hint="Used as X-Api-Key header"
+            />
+            <View style={styles.apiKeyButtons}>
+              <TouchableOpacity
+                style={styles.smallButton}
+                onPress={generateApiKey}
+              >
+                <Icon name="refresh" size={16} color="#007AFF" />
+                <Text style={styles.smallButtonText}>Generate</Text>
+              </TouchableOpacity>
+              {apiKey ? (
+                <TouchableOpacity
+                  style={styles.smallButton}
+                  onPress={() => copyToClipboard(apiKey, 'API Key')}
+                >
+                  <Icon name="content-copy" size={16} color="#007AFF" />
+                  <Text style={styles.smallButtonText}>Copy</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          </View>
+
+          {/* Allow Control */}
+          <SettingsSwitch
+            label="Allow Remote Control"
+            value={allowControl}
+            onValueChange={handleAllowControlChange}
+            icon="remote"
+            hint="Enable POST commands (brightness, reload, etc.)"
+          />
+
+          {/* API Endpoints Info */}
+          <View style={styles.endpointsContainer}>
+            <Text style={styles.endpointsTitle}>Available Endpoints:</Text>
+            
+            <View style={styles.endpointCategory}>
+              <Text style={styles.categoryLabel}>GET (Read-only)</Text>
+              <Text style={styles.endpoint}>/api/status - Full device status</Text>
+              <Text style={styles.endpoint}>/api/battery - Battery info</Text>
+              <Text style={styles.endpoint}>/api/brightness - Current brightness</Text>
+              <Text style={styles.endpoint}>/api/screen - Screen state</Text>
+              <Text style={styles.endpoint}>/api/info - Device info</Text>
+              <Text style={styles.endpoint}>/api/health - Health check</Text>
+              <Text style={styles.endpoint}>/api/sensors - Light, proximity, accelerometer</Text>
+              <Text style={styles.endpoint}>/api/storage - Storage info</Text>
+              <Text style={styles.endpoint}>/api/memory - RAM info</Text>
+              <Text style={styles.endpoint}>/api/wifi - WiFi status</Text>
+              <Text style={styles.endpoint}>/api/screenshot - Capture screen (PNG)</Text>
+            </View>
+
+            {allowControl && (
+              <View style={styles.endpointCategory}>
+                <Text style={styles.categoryLabel}>POST (Control)</Text>
+                <Text style={styles.endpoint}>/api/brightness - Set brightness</Text>
+                <Text style={styles.endpoint}>/api/screen/on - Turn screen on</Text>
+                <Text style={styles.endpoint}>/api/screen/off - Turn screen off</Text>
+                <Text style={styles.endpoint}>/api/screensaver/on - Enable screensaver</Text>
+                <Text style={styles.endpoint}>/api/screensaver/off - Disable screensaver</Text>
+                <Text style={styles.endpoint}>/api/reload - Reload WebView</Text>
+                <Text style={styles.endpoint}>/api/url - Navigate to URL</Text>
+                <Text style={styles.endpoint}>/api/wake - Wake from screensaver</Text>
+                <Text style={styles.endpoint}>/api/tts - Text to speech</Text>
+                <Text style={styles.endpoint}>/api/volume - Set volume</Text>
+                <Text style={styles.endpoint}>/api/toast - Show toast message</Text>
+                <Text style={styles.endpoint}>/api/js - Execute JavaScript</Text>
+                <Text style={styles.endpoint}>/api/clearCache - Clear WebView cache</Text>
+                <Text style={styles.endpoint}>/api/app/launch - Launch external app</Text>
+                <Text style={styles.endpoint}>/api/reboot - Reboot (Device Owner)</Text>
+                <Text style={styles.endpoint}>/api/audio/play - Play audio URL</Text>
+                <Text style={styles.endpoint}>/api/audio/stop - Stop audio</Text>
+                <Text style={styles.endpoint}>/api/audio/beep - Play beep sound</Text>
+              </View>
+            )}
+
+            {allowControl && (
+              <View style={styles.endpointCategory}>
+                <Text style={styles.categoryLabel}>POST (Remote Control - Android TV)</Text>
+                <Text style={styles.endpoint}>/api/remote/up - D-pad up</Text>
+                <Text style={styles.endpoint}>/api/remote/down - D-pad down</Text>
+                <Text style={styles.endpoint}>/api/remote/left - D-pad left</Text>
+                <Text style={styles.endpoint}>/api/remote/right - D-pad right</Text>
+                <Text style={styles.endpoint}>/api/remote/select - Select/Enter</Text>
+                <Text style={styles.endpoint}>/api/remote/back - Back button</Text>
+                <Text style={styles.endpoint}>/api/remote/home - Home button</Text>
+                <Text style={styles.endpoint}>/api/remote/menu - Menu button</Text>
+                <Text style={styles.endpoint}>/api/remote/playpause - Play/Pause</Text>
+              </View>
+            )}
+          </View>
+
+          {/* Home Assistant Hint */}
+          <View style={styles.hintContainer}>
+            <Icon name="home-assistant" size={20} color="#41BDF5" />
+            <Text style={styles.hintText}>
+              Use with Home Assistant's RESTful integration. See documentation for configuration examples.
+            </Text>
+          </View>
+        </>
+      )}
+    </SettingsSection>
   );
 };
 
