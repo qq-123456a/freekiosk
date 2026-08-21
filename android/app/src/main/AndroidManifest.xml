@@ -200,6 +200,23 @@
         android:enabled="true"
         android:exported="false" />
 
+      <!-- Local daily full-device reboot scheduler (Device Owner required to execute reboot) -->
+      <receiver
+        android:name=".ScheduledRebootReceiver"
+        android:enabled="true"
+        android:exported="false"
+        android:directBootAware="true">
+        <intent-filter>
+          <action android:name="com.freekiosk.ACTION_SCHEDULED_DEVICE_REBOOT" />
+          <action android:name="android.intent.action.BOOT_COMPLETED" />
+          <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+          <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+          <action android:name="android.intent.action.TIME_SET" />
+          <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+          <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+        </intent-filter>
+      </receiver>
+
       <!-- AccessibilityService pour injection clavier dans les apps externes
            Disabled in Play Store builds (-Pplaystore) to avoid BIND_ACCESSIBILITY_SERVICE policy violation -->
       <service
