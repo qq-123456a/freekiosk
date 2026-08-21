@@ -16,6 +16,7 @@ interface ScheduledRebootModuleInterface {
     hour: number,
     minute: number,
   ): Promise<ScheduledRebootSettings>;
+  requestExactAlarmAccess(): Promise<boolean>;
 }
 
 const { ScheduledRebootModule } = NativeModules;
