@@ -32,6 +32,9 @@
          Removed entirely in Play Store builds via src/playstore overlay (tools:node="remove"). -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Required on Android 12+ to guarantee a reboot at the configured wall-clock time.
+         Removed from Play Store builds by the src/playstore manifest overlay. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS"
         tools:ignore="ProtectedPermissions" />
 
@@ -214,6 +217,7 @@
           <action android:name="android.intent.action.TIME_SET" />
           <action android:name="android.intent.action.TIMEZONE_CHANGED" />
           <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+          <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
         </intent-filter>
       </receiver>
 

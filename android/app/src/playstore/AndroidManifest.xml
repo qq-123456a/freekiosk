@@ -13,6 +13,11 @@
         android:name="android.permission.REQUEST_INSTALL_PACKAGES"
         tools:node="remove" />
 
+    <!-- Strip exact-alarm special access from Play Store builds -->
+    <uses-permission
+        android:name="android.permission.SCHEDULE_EXACT_ALARM"
+        tools:node="remove" />
+
     <!-- Strip READ_MEDIA_* (photo/video policy) -->
     <uses-permission
         android:name="android.permission.READ_MEDIA_VIDEO"

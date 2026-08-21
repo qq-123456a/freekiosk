@@ -7,6 +7,7 @@ export interface ScheduledRebootSettings {
   nextTriggerAt: number;
   isDeviceOwner: boolean;
   exactAlarmAvailable: boolean;
+  exactAlarmRequestSupported: boolean;
 }
 
 interface ScheduledRebootModuleInterface {
@@ -16,6 +17,7 @@ interface ScheduledRebootModuleInterface {
     hour: number,
     minute: number,
   ): Promise<ScheduledRebootSettings>;
+  requestExactAlarmAccess(): Promise<boolean>;
 }
 
 const { ScheduledRebootModule } = NativeModules;

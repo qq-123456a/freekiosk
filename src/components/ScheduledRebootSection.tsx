@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Text } from 'react-native';
+import { Alert, AppState, Text } from 'react-native';
 import {
   SettingsButton,
   SettingsInfoBox,
@@ -27,6 +27,7 @@ const ScheduledRebootSection: React.FC = () => {
   const [nextTriggerAt, setNextTriggerAt] = useState(0);
   const [isDeviceOwner, setIsDeviceOwner] = useState(false);
   const [exactAlarmAvailable, setExactAlarmAvailable] = useState(true);
+  const [exactAlarmRequestSupported, setExactAlarmRequestSupported] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -38,6 +39,7 @@ const ScheduledRebootSection: React.FC = () => {
     setNextTriggerAt(settings.nextTriggerAt || 0);
     setIsDeviceOwner(settings.isDeviceOwner);
     setExactAlarmAvailable(settings.exactAlarmAvailable);
+    setExactAlarmRequestSupported(settings.exactAlarmRequestSupported);
   }, []);
 
   const load = useCallback(async () => {
@@ -53,6 +55,15 @@ const ScheduledRebootSection: React.FC = () => {
 
   useEffect(() => {
     load();
+  }, [load]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        load();
+      }
+    });
+    return () => subscription.remove();
   }, [load]);
 
   const save = useCallback(async (nextEnabled: boolean, nextTime: string) => {
@@ -89,6 +100,17 @@ const ScheduledRebootSection: React.FC = () => {
       setSaving(false);
     }
   }, [applySettings, isDeviceOwner]);
+
+  const requestExactAlarmAccess = useCallback(async () => {
+    try {
+      await ScheduledRebootModule.requestExactAlarmAccess();
+    } catch (error: any) {
+      Alert.alert(
+        'Exact alarm access',
+        error?.message || 'Could not open Android exact alarm settings.',
+      );
+    }
+  }, []);
 
   const nextRebootLabel = useMemo(() => {
     if (!enabled || !nextTriggerAt) return null;
@@ -138,15 +160,32 @@ const ScheduledRebootSection: React.FC = () => {
             loading={saving}
           />
 
+          {!exactAlarmAvailable && (
+            <SettingsInfoBox variant="warning" title="Exact timing is not enabled">
+              <Text>
+                {exactAlarmRequestSupported
+                  ? 'Android 12+ requires special “Alarms & reminders” access to guarantee the configured reboot time. Without it, Android may defer the reboot while the tablet is idle.'
+                  : 'This build does not request Android exact-alarm special access. The reboot remains scheduled locally, but Android may defer it while the tablet is idle.'}
+              </Text>
+            </SettingsInfoBox>
+          )}
+
+          {!exactAlarmAvailable && exactAlarmRequestSupported && (
+            <SettingsButton
+              title="Allow Exact Alarm Timing"
+              icon="open-in-new"
+              variant="primary"
+              onPress={requestExactAlarmAccess}
+              disabled={saving}
+            />
+          )}
+
           <SettingsInfoBox variant="info">
             <Text>
               The reboot follows the tablet's local time. If the tablet is powered off at the
               scheduled time, FreeKiosk skips that occurrence and schedules the next day. Time
               and time-zone changes automatically recalculate the next reboot.
               {nextRebootLabel ? `\n\nNext reboot: ${nextRebootLabel}` : ''}
-              {!exactAlarmAvailable
-                ? '\n\nAndroid exact-alarm access is not available, so the system may delay the reboot slightly during deep idle.'
-                : ''}
             </Text>
           </SettingsInfoBox>
         </>
