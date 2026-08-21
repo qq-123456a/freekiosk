@@ -1,8 +1,14 @@
 package com.freekiosk
 
+import android.app.ActivityManager
 import android.app.AlarmManager
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.provider.Settings
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
@@ -28,6 +34,11 @@ class ScheduledRebootModule(
                     settings.hour,
                     settings.minute,
                 )
+            } else if (settings.enabled) {
+                // Re-register whenever settings are opened. This upgrades an inexact alarm
+                // to an exact alarm immediately after the user grants special access.
+                ScheduledRebootManager.scheduleNext(reactApplicationContext)
+                settings = ScheduledRebootManager.readSettings(reactApplicationContext)
             }
 
             promise.resolve(toWritableMap(settings, isDeviceOwner))
@@ -56,6 +67,58 @@ class ScheduledRebootModule(
             promise.reject("INVALID_TIME", e.message)
         } catch (e: Exception) {
             promise.reject("ERROR", "Failed to configure scheduled reboot: ${e.message}")
+        }
+    }
+
+    @ReactMethod
+    fun requestExactAlarmAccess(promise: Promise) {
+        try {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || exactAlarmAvailable()) {
+                promise.resolve(true)
+                return
+            }
+
+            val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                data = Uri.parse("package:${reactApplicationContext.packageName}")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+
+            val activity = reactApplicationContext.currentActivity
+            if (activity == null) {
+                reactApplicationContext.startActivity(intent)
+                promise.resolve(true)
+                return
+            }
+
+            val activityManager = reactApplicationContext
+                .getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+            val inLockTask = activityManager.lockTaskModeState != ActivityManager.LOCK_TASK_MODE_NONE
+
+            activity.runOnUiThread {
+                try {
+                    if (inLockTask) {
+                        activity.stopLockTask()
+                        Handler(Looper.getMainLooper()).postDelayed({
+                            try {
+                                reactApplicationContext.startActivity(intent)
+                                promise.resolve(true)
+                            } catch (e: Exception) {
+                                promise.reject(
+                                    "ERROR",
+                                    "Failed to open exact alarm settings: ${e.message}",
+                                )
+                            }
+                        }, 300)
+                    } else {
+                        reactApplicationContext.startActivity(intent)
+                        promise.resolve(true)
+                    }
+                } catch (e: Exception) {
+                    promise.reject("ERROR", "Failed to open exact alarm settings: ${e.message}")
+                }
+            }
+        } catch (e: Exception) {
+            promise.reject("ERROR", "Failed to request exact alarm access: ${e.message}")
         }
     }
 
