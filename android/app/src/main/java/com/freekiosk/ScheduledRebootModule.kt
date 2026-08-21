@@ -1,9 +1,11 @@
 package com.freekiosk
 
+import android.Manifest
 import android.app.ActivityManager
 import android.app.AlarmManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
@@ -77,6 +79,13 @@ class ScheduledRebootModule(
                 promise.resolve(true)
                 return
             }
+            if (!exactAlarmRequestSupported()) {
+                promise.reject(
+                    "UNAVAILABLE",
+                    "This build does not declare SCHEDULE_EXACT_ALARM access",
+                )
+                return
+            }
 
             val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
                 data = Uri.parse("package:${reactApplicationContext.packageName}")
@@ -132,6 +141,7 @@ class ScheduledRebootModule(
         putDouble("nextTriggerAt", settings.nextTriggerAt.toDouble())
         putBoolean("isDeviceOwner", isDeviceOwner)
         putBoolean("exactAlarmAvailable", exactAlarmAvailable())
+        putBoolean("exactAlarmRequestSupported", exactAlarmRequestSupported())
     }
 
     private fun exactAlarmAvailable(): Boolean {
@@ -139,5 +149,19 @@ class ScheduledRebootModule(
         val alarmManager = reactApplicationContext
             .getSystemService(Context.ALARM_SERVICE) as AlarmManager
         return alarmManager.canScheduleExactAlarms()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun exactAlarmRequestSupported(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return false
+        return try {
+            val packageInfo = reactApplicationContext.packageManager.getPackageInfo(
+                reactApplicationContext.packageName,
+                PackageManager.GET_PERMISSIONS,
+            )
+            packageInfo.requestedPermissions?.contains(Manifest.permission.SCHEDULE_EXACT_ALARM) == true
+        } catch (_: Exception) {
+            false
+        }
     }
 }
