@@ -12,6 +12,7 @@ import {
   BackupRestoreSection,
 } from '../../../components/settings';
 import { ApiSettingsSection } from '../../../components/ApiSettingsSection';
+import ScheduledRebootSection from '../../../components/ScheduledRebootSection';
 import { MqttSettingsSection } from '../../../components/MqttSettingsSection';
 import { CertificateInfo } from '../../../utils/CertificateModule';
 import AccessibilityModule from '../../../utils/AccessibilityModule';
@@ -229,6 +230,9 @@ const AdvancedTab: React.FC<AdvancedTabProps> = ({
       
       {/* REST API - Home Assistant Integration */}
       <ApiSettingsSection />
+
+      {/* Local unattended device maintenance */}
+      <ScheduledRebootSection />
 
       {/* MQTT - Home Assistant Integration */}
       <MqttSettingsSection />
