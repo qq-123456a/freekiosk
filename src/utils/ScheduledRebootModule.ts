@@ -7,6 +7,7 @@ export interface ScheduledRebootSettings {
   nextTriggerAt: number;
   isDeviceOwner: boolean;
   exactAlarmAvailable: boolean;
+  exactAlarmRequestSupported: boolean;
 }
 
 interface ScheduledRebootModuleInterface {
