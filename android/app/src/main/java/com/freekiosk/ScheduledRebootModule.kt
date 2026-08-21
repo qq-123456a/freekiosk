@@ -104,14 +104,23 @@ class ScheduledRebootModule(
             val inLockTask = activityManager.lockTaskModeState != ActivityManager.LOCK_TASK_MODE_NONE
 
             activity.runOnUiThread {
+                var lockTaskStopped = false
                 try {
                     if (inLockTask) {
                         activity.stopLockTask()
+                        lockTaskStopped = true
                         Handler(Looper.getMainLooper()).postDelayed({
                             try {
                                 reactApplicationContext.startActivity(intent)
                                 promise.resolve(true)
                             } catch (e: Exception) {
+                                if (lockTaskStopped) {
+                                    try {
+                                        activity.startLockTask()
+                                    } catch (_: Exception) {
+                                        // Best effort: never leave the kiosk unlocked because Settings failed.
+                                    }
+                                }
                                 promise.reject(
                                     "ERROR",
                                     "Failed to open exact alarm settings: ${e.message}",
@@ -123,6 +132,13 @@ class ScheduledRebootModule(
                         promise.resolve(true)
                     }
                 } catch (e: Exception) {
+                    if (lockTaskStopped) {
+                        try {
+                            activity.startLockTask()
+                        } catch (_: Exception) {
+                            // Best effort: MainActivity also restores lock task on resume.
+                        }
+                    }
                     promise.reject("ERROR", "Failed to open exact alarm settings: ${e.message}")
                 }
             }
