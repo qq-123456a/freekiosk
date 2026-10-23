@@ -27,6 +27,8 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: TypeScript typecheck
         run: npm run typecheck
+      - name: Hybrid Dashboard tests
+        run: npx jest __tests__/hybridDashboard.test.ts --runInBand
       - name: Build Android release
         run: |
           cd android
