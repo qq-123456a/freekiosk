@@ -193,6 +193,8 @@ const KioskScreen: React.FC<KioskScreenProps> = ({ navigation }) => {
   const [dashboardModeEnabled, setDashboardModeEnabled] = useState<boolean>(false);
   const [dashboardTiles, setDashboardTiles] = useState<DashboardTile[]>([]);
   const [dashboardShowGrid, setDashboardShowGrid] = useState<boolean>(true);
+  // Launch the starred native app only once after boot, never on every settings return.
+  const hybridDefaultStartedRef = useRef(false);
   const [navState, setNavState] = useState<{ canGoBack: boolean; canGoForward: boolean; title: string }>({ canGoBack: false, canGoForward: false, title: '' });
   const [pdfViewerEnabled, setPdfViewerEnabled] = useState<boolean>(false);
   const [printEnabled, setPrintEnabled] = useState<boolean>(false);
@@ -1382,6 +1384,13 @@ const KioskScreen: React.FC<KioskScreenProps> = ({ navigation }) => {
       }
     );
 
+    // Native HOME overlay returns here without passing through the administrator PIN.
+    const hybridHomeListener = eventEmitter.addListener('navigateToHybridHome', () => {
+      setDashboardShowGrid(true);
+      setIsAppLaunched(false);
+      OverlayServiceModule.stopOverlayService().catch(() => {});
+    });
+
     // Reset inactivity timer when user taps on external app (event from OverlayService tap handler)
     const screensaverActivityListener = eventEmitter.addListener(
       'screensaverActivity',
@@ -1395,6 +1404,7 @@ const KioskScreen: React.FC<KioskScreenProps> = ({ navigation }) => {
     return () => {
       appReturnedListener.remove();
       navigateToPinListener.remove();
+      hybridHomeListener.remove();
       screensaverActivityListener.remove();
       if (relaunchTimerRef.current) {
         clearTimeout(relaunchTimerRef.current);
@@ -1820,6 +1830,17 @@ const KioskScreen: React.FC<KioskScreenProps> = ({ navigation }) => {
           await KioskModule.stopLockTask();
         } catch {
           // Silent fail
+        }
+      }
+
+      // Hybrid Dashboard: the starred Android app opens by default after device boot.
+      // Keep display_mode=webview, preserving the web grid and the native HOME return path.
+      if (savedDisplayMode === 'webview' && savedDashboardMode && !hybridDefaultStartedRef.current) {
+        hybridDefaultStartedRef.current = true;
+        const defaultPkg = await AsyncStorage.getItem('@roddy_hybrid_default_package');
+        const isAllowed = savedDashboardTiles.some(t => t.kind === 'app' && t.packageName === defaultPkg);
+        if (defaultPkg && isAllowed && await AppLauncherModule.isAppInstalled(defaultPkg)) {
+          await launchExternalApp(defaultPkg, 1, 1500, 'hybrid_home', 'top-left');
         }
       }
 
@@ -2561,7 +2582,16 @@ const KioskScreen: React.FC<KioskScreenProps> = ({ navigation }) => {
           {dashboardModeEnabled && dashboardShowGrid ? (
             <DashboardGrid
               tiles={dashboardTiles}
-              onTilePress={(tile) => {
+              onTilePress={async (tile) => {
+                if (tile.kind === 'app') {
+                  const pkg = tile.packageName;
+                  if (pkg && await AppLauncherModule.isAppInstalled(pkg)) {
+                    await launchExternalApp(pkg, 1, 1500, 'hybrid_home', 'top-left');
+                  } else {
+                    console.warn('[HybridDashboard] App not installed:', pkg);
+                  }
+                  return;
+                }
                 setUrl(tile.url);
                 setDashboardShowGrid(false);
               }}
