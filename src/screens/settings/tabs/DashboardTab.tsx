@@ -34,6 +34,8 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ dashboardModeEnabled }) => 
   const [editUrl, setEditUrl] = useState('');
   const [editKind, setEditKind] = useState<'web' | 'app'>('web');
   const [editPackageName, setEditPackageName] = useState('');
+  const [editRestrictNavigation, setEditRestrictNavigation] = useState(true);
+  const [editAllowedOrigins, setEditAllowedOrigins] = useState('');
   const [defaultApp, setDefaultApp] = useState('');
   const [editIconMode, setEditIconMode] = useState<DashboardTile['iconMode']>('favicon');
   const [editIconValue, setEditIconValue] = useState('');
@@ -69,6 +71,8 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ dashboardModeEnabled }) => 
     setEditUrl('');
     setEditKind('web');
     setEditPackageName('');
+    setEditRestrictNavigation(true);
+    setEditAllowedOrigins('');
     setEditIconMode('favicon');
     setEditIconValue('');
     setShowEditor(true);
@@ -80,6 +84,8 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ dashboardModeEnabled }) => 
     setEditUrl(tile.url);
     setEditKind(tile.kind === 'app' ? 'app' : 'web');
     setEditPackageName(tile.packageName || '');
+    setEditRestrictNavigation(tile.restrictNavigation !== false);
+    setEditAllowedOrigins((tile.extraAllowedOrigins || []).join(', '));
     setEditIconMode(tile.iconMode);
     setEditIconValue(tile.iconValue || '');
     setShowEditor(true);
@@ -113,11 +119,17 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ dashboardModeEnabled }) => 
       }
     }
 
+    const extraOrigins = editKind === 'web' ? editAllowedOrigins.split(',').map(x => x.trim()).filter(Boolean) : [];
+    if (extraOrigins.some(origin => !/^https?:\/\/[a-z0-9.-]+(?::[0-9]+)?$/i.test(origin))) {
+      Alert.alert('Invalid origin', 'Add full http(s)://host origins separated by commas, without paths.');
+      return;
+    }
+
     if (editingTile) {
       // Update existing
       const updated = tiles.map(t =>
         t.id === editingTile.id
-          ? { ...t, label: editLabel.trim(), kind: editKind, url: finalUrl, packageName: editKind === 'app' ? editPackageName.trim() : undefined, iconMode: editKind === 'app' ? 'letter' as const : editIconMode, iconValue: editKind === 'web' && editIconMode === 'image' ? editIconValue.trim() : undefined }
+          ? { ...t, label: editLabel.trim(), kind: editKind, url: finalUrl, packageName: editKind === 'app' ? editPackageName.trim() : undefined, restrictNavigation: editKind === 'web' ? editRestrictNavigation : undefined, extraAllowedOrigins: editKind === 'web' ? extraOrigins : undefined, iconMode: editKind === 'app' ? 'letter' as const : editIconMode, iconValue: editKind === 'web' && editIconMode === 'image' ? editIconValue.trim() : undefined }
           : t,
       );
       await saveTiles(updated);
@@ -129,6 +141,8 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ dashboardModeEnabled }) => 
         kind: editKind,
         url: finalUrl,
         packageName: editKind === 'app' ? editPackageName.trim() : undefined,
+        restrictNavigation: editKind === 'web' ? editRestrictNavigation : undefined,
+        extraAllowedOrigins: editKind === 'web' ? extraOrigins : undefined,
         iconMode: editKind === 'app' ? 'letter' : editIconMode,
         iconValue: editIconMode === 'image' ? editIconValue.trim() : undefined,
         order: tiles.length,
@@ -294,6 +308,22 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ dashboardModeEnabled }) => 
           )}
           <View style={styles.editorSpacer} />
 
+          {editKind === 'web' && (
+            <>
+              <TouchableOpacity onPress={() => setEditRestrictNavigation(v => !v)} style={styles.iconModeRow}>
+                <MaterialCommunityIcons name={editRestrictNavigation ? 'checkbox-marked' : 'checkbox-blank-outline'} size={22} color={Colors.primary} />
+                <Text style={styles.fieldLabel}>Restrict navigation to this website</Text>
+              </TouchableOpacity>
+              {editRestrictNavigation && (
+                <>
+                  <View style={styles.editorSpacer} />
+                  <SettingsInput label="Extra allowed origins (comma-separated, optional)" value={editAllowedOrigins}
+                    onChangeText={setEditAllowedOrigins} placeholder="https://login.example.com" />
+                </>
+              )}
+              <View style={styles.editorSpacer} />
+            </>
+          )}
           {/* Website icon selection; Android app tiles use a built-in icon. */}
           {editKind === 'web' && <Text style={styles.fieldLabel}>Icon Mode</Text>}
           {editKind === 'web' && <View style={styles.iconModeRow}>
