@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { View, Text, TouchableOpacity, StyleSheet, Alert, Image } from 'react-native';
 import {
   SettingsSection,
@@ -15,6 +16,7 @@ import {
 } from '../../../types/dashboard';
 import { getTileColor, MATERIAL_PALETTE } from '../../../utils/dashboardColors';
 import { StorageService } from '../../../utils/storage';
+import { createManagedApp, isValidPackageName } from '../../../types/managedApps';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useTranslation } from 'react-i18next';
 
@@ -38,6 +40,11 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ dashboardModeEnabled }) => 
   // Editor state
   const [editLabel, setEditLabel] = useState('');
   const [editUrl, setEditUrl] = useState('');
+  const [editKind, setEditKind] = useState<'web' | 'app'>('web');
+  const [editPackageName, setEditPackageName] = useState('');
+  const [editRestrictNavigation, setEditRestrictNavigation] = useState(true);
+  const [editAllowedOrigins, setEditAllowedOrigins] = useState('');
+  const [defaultApp, setDefaultApp] = useState('');
   const [editIconMode, setEditIconMode] = useState<DashboardTile['iconMode']>('favicon');
   const [editIconValue, setEditIconValue] = useState('');
   const [editIconColor, setEditIconColor] = useState<string | undefined>(undefined);
@@ -56,18 +63,31 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ dashboardModeEnabled }) => 
   const loadTiles = async () => {
     const saved = await StorageService.getDashboardTiles();
     setTiles(saved.sort((a, b) => a.order - b.order));
+    setDefaultApp((await AsyncStorage.getItem('@roddy_hybrid_default_package')) || '');
   };
 
   const saveTiles = async (updated: DashboardTile[]) => {
     const sorted = updated.sort((a, b) => a.order - b.order);
     setTiles(sorted);
     await StorageService.saveDashboardTiles(sorted);
+    const current = await StorageService.getManagedApps();
+    const next = [...current];
+    for (const tile of sorted) {
+      if (tile.kind === 'app' && tile.packageName && !next.some(app => app.packageName === tile.packageName)) {
+        next.push(createManagedApp(tile.packageName, tile.label, { showOnHomeScreen: false }));
+      }
+    }
+    await StorageService.saveManagedApps(next);
   };
 
   const openAddEditor = () => {
     setEditingTile(null);
     setEditLabel('');
     setEditUrl('');
+    setEditKind('web');
+    setEditPackageName('');
+    setEditRestrictNavigation(true);
+    setEditAllowedOrigins('');
     setEditIconMode('favicon');
     setEditIconValue('');
     setEditIconColor(undefined);
@@ -78,6 +98,10 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ dashboardModeEnabled }) => 
     setEditingTile(tile);
     setEditLabel(tile.label);
     setEditUrl(tile.url);
+    setEditKind(tile.kind === 'app' ? 'app' : 'web');
+    setEditPackageName(tile.packageName || '');
+    setEditRestrictNavigation(tile.restrictNavigation !== false);
+    setEditAllowedOrigins((tile.extraAllowedOrigins || []).join(', '));
     setEditIconMode(tile.iconMode);
     setEditIconValue(tile.iconValue || '');
     setEditIconColor(tile.iconColor);
@@ -89,17 +113,21 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ dashboardModeEnabled }) => 
       Alert.alert(t('dashboard.errors.error'), t('dashboard.errors.enterLabel'));
       return;
     }
-    if (!editUrl.trim()) {
+    if (editKind === 'app' && !isValidPackageName(editPackageName.trim())) {
+      Alert.alert('Invalid package', 'Enter an Android package name such as co.tanda.timeclock');
+      return;
+    }
+    if (editKind === 'web' && !editUrl.trim()) {
       Alert.alert(t('dashboard.errors.error'), t('dashboard.errors.enterUrl'));
       return;
     }
-    let finalUrl = editUrl.trim();
+    let finalUrl = editKind === 'app' ? '' : editUrl.trim();
     const urlLower = finalUrl.toLowerCase();
-    if (urlLower.startsWith('javascript:') || urlLower.startsWith('data:') || urlLower.startsWith('file://')) {
+    if (editKind === 'web' && (urlLower.startsWith('javascript:') || urlLower.startsWith('data:') || urlLower.startsWith('file://'))) {
       Alert.alert(t('dashboard.errors.securityError'), t('dashboard.errors.urlNotAllowed'));
       return;
     }
-    if (!urlLower.startsWith('http://') && !urlLower.startsWith('https://')) {
+    if (editKind === 'web' && !urlLower.startsWith('http://') && !urlLower.startsWith('https://')) {
       if (finalUrl.includes('.')) {
         finalUrl = 'https://' + finalUrl;
       } else {
@@ -108,11 +136,16 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ dashboardModeEnabled }) => 
       }
     }
 
+    const extraOrigins = editKind === 'web' ? editAllowedOrigins.split(',').map(x => x.trim()).filter(Boolean) : [];
+    if (extraOrigins.some(origin => !/^https?:\/\/[a-z0-9.-]+(?::[0-9]+)?$/i.test(origin))) {
+      Alert.alert('Invalid origin', 'Enter comma-separated http(s)://host origins without paths.');
+      return;
+    }
     if (editingTile) {
       // Update existing
       const updated = tiles.map(t =>
         t.id === editingTile.id
-          ? { ...t, label: editLabel.trim(), url: finalUrl, iconMode: editIconMode, iconValue: editIconMode === 'image' ? editIconValue.trim() : undefined, iconColor: editIconColor }
+          ? { ...t, label: editLabel.trim(), kind: editKind, url: finalUrl, packageName: editKind === 'app' ? editPackageName.trim() : undefined, restrictNavigation: editKind === 'web' ? editRestrictNavigation : undefined, extraAllowedOrigins: editKind === 'web' ? extraOrigins : undefined, iconMode: editKind === 'app' ? 'letter' as const : editIconMode, iconValue: editKind === 'web' && editIconMode === 'image' ? editIconValue.trim() : undefined, iconColor: editIconColor }
           : t,
       );
       await saveTiles(updated);
@@ -121,8 +154,12 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ dashboardModeEnabled }) => 
       const newTile: DashboardTile = {
         id: Date.now().toString(36) + Math.random().toString(36).slice(2),
         label: editLabel.trim(),
+        kind: editKind,
         url: finalUrl,
-        iconMode: editIconMode,
+        packageName: editKind === 'app' ? editPackageName.trim() : undefined,
+        restrictNavigation: editKind === 'web' ? editRestrictNavigation : undefined,
+        extraAllowedOrigins: editKind === 'web' ? extraOrigins : undefined,
+        iconMode: editKind === 'app' ? 'letter' : editIconMode,
         iconValue: editIconMode === 'image' ? editIconValue.trim() : undefined,
         iconColor: editIconColor,
         order: tiles.length,
@@ -166,7 +203,7 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ dashboardModeEnabled }) => 
   };
 
   const renderTilePreview = (tile: DashboardTile) => {
-    if (tile.iconMode === 'letter') {
+    if (tile.kind === 'app' || tile.iconMode === 'letter') {
       const color = getTileColor(tile);
       const letter = tile.label ? tile.label[0].toUpperCase() : '?';
       return (
@@ -241,9 +278,18 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ dashboardModeEnabled }) => 
             {/* Label & URL */}
             <View style={styles.tileInfo}>
               <Text style={styles.tileLabel} numberOfLines={1}>{tile.label}</Text>
-              <Text style={styles.tileUrl} numberOfLines={1}>{tile.url}</Text>
+              <Text style={styles.tileUrl} numberOfLines={1}>{tile.kind === 'app' ? `Android: ${tile.packageName}` : tile.url}</Text>
             </View>
 
+            {tile.kind === 'app' && (
+              <TouchableOpacity onPress={async () => {
+                const value = defaultApp === tile.packageName ? '' : (tile.packageName || '');
+                await AsyncStorage.setItem('@roddy_hybrid_default_package', value);
+                setDefaultApp(value);
+              }} style={styles.actionButton}>
+                <MaterialCommunityIcons name={defaultApp === tile.packageName ? 'star' : 'star-outline'} size={20} color={Colors.primary} />
+              </TouchableOpacity>
+            )}
             {/* Edit / Delete */}
             <TouchableOpacity onPress={() => openEditEditor(tile)} style={styles.actionButton}>
               <MaterialCommunityIcons name="pencil" size={18} color={Colors.primary} />
@@ -271,18 +317,34 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ dashboardModeEnabled }) => 
             placeholder={t('dashboard.labelPlaceholder')}
           />
           <View style={styles.editorSpacer} />
-          <SettingsInput
-            label={t('dashboard.url')}
-            value={editUrl}
-            onChangeText={setEditUrl}
-            placeholder={t('dashboard.urlPlaceholder')}
-            keyboardType="url"
-          />
+          <Text style={styles.fieldLabel}>Tile type</Text>
+          <View style={styles.iconModeRow}>
+            {(['web', 'app'] as const).map(kind => (
+              <TouchableOpacity key={kind} onPress={() => setEditKind(kind)} style={[styles.iconModeButton, editKind === kind && styles.iconModeButtonActive]}>
+                <Text style={[styles.iconModeText, editKind === kind && styles.iconModeTextActive]}>{kind === 'web' ? 'Website' : 'Android App'}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <View style={styles.editorSpacer} />
+          {editKind === 'app' ? (
+            <SettingsInput label="Android Package" value={editPackageName} onChangeText={setEditPackageName} placeholder="co.tanda.timeclock" />
+          ) : (
+            <SettingsInput label={t('dashboard.url')} value={editUrl} onChangeText={setEditUrl} placeholder={t('dashboard.urlPlaceholder')} keyboardType="url" />
+          )}
           <View style={styles.editorSpacer} />
 
+          {editKind === 'web' && (
+            <>
+              <TouchableOpacity onPress={() => setEditRestrictNavigation(v => !v)} style={styles.iconModeRow}>
+                <MaterialCommunityIcons name={editRestrictNavigation ? 'checkbox-marked' : 'checkbox-blank-outline'} size={22} color={Colors.primary}/>
+                <Text style={styles.fieldLabel}>Restrict navigation to this website</Text>
+              </TouchableOpacity>
+              {editRestrictNavigation && <SettingsInput label="Extra allowed origins (optional, comma-separated)" value={editAllowedOrigins} onChangeText={setEditAllowedOrigins} placeholder="https://login.example.com" />}
+            </>
+          )}
           {/* Icon mode selector */}
-          <Text style={styles.fieldLabel}>{t('dashboard.iconMode')}</Text>
-          <View style={styles.iconModeRow}>
+          {editKind === 'web' && <Text style={styles.fieldLabel}>{t('dashboard.iconMode')}</Text>}
+          {editKind === 'web' && <View style={styles.iconModeRow}>
             {ICON_MODES.map(mode => (
               <TouchableOpacity
                 key={mode.value}
@@ -302,9 +364,9 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ dashboardModeEnabled }) => 
                 </Text>
               </TouchableOpacity>
             ))}
-          </View>
+          </View>}
 
-          {editIconMode === 'image' && (
+          {editKind === 'web' && editIconMode === 'image' && (
             <>
               <View style={styles.editorSpacer} />
               <SettingsInput
@@ -350,8 +412,10 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ dashboardModeEnabled }) => 
                 {renderTilePreview({
                   id: 'preview',
                   label: editLabel,
-                  url: editUrl,
-                  iconMode: editIconMode,
+                  url: editKind === 'web' ? editUrl : '',
+                  kind: editKind,
+                  packageName: editPackageName,
+                  iconMode: editKind === 'app' ? 'letter' : editIconMode,
                   iconValue: editIconValue,
                   iconColor: editIconColor,
                   order: 0,
