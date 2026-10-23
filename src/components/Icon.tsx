@@ -79,6 +79,7 @@ export type IconName =
   | 'plus-circle'
   | 'plus-circle-outline'
   | 'content-copy'
+  | 'content-save'
   | 'download'
   | 'upload'
   | 'magnify'
