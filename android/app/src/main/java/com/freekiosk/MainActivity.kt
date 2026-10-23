@@ -160,6 +160,14 @@ class MainActivity : ReactActivity() {
   }
 
   private fun handleNavigationIntent(intent: Intent?) {
+    // Separate employee HOME path; never modify the existing administrator PIN flow.
+    if (intent?.getBooleanExtra("hybridHomeReturn", false) == true) {
+      blockAutoRelaunch = true
+      intent.removeExtra("hybridHomeReturn")
+      Handler(Looper.getMainLooper()).postDelayed({
+        KioskModule.sendEventFromNative("navigateToHybridHome", null)
+      }, 200)
+    }
     val shouldNavigateToPin = intent?.getBooleanExtra("navigateToPin", false) == true
     val isVoluntary = intent?.getBooleanExtra("voluntaryReturn", false) == true
     
