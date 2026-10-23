@@ -38,6 +38,14 @@ const TileIcon: React.FC<{ tile: DashboardTile; m: DashboardIconMetrics }> = ({ 
     tile.iconColor ? { backgroundColor: getTileColor(tile) } : null,
   ];
 
+  if (tile.kind === 'app') {
+    return (
+      <View style={[styles.letterCircle, circle, { backgroundColor: getTileColor(tile) }]}>
+        <Text style={[styles.letterText, { fontSize: m.letter }]}>{tile.label ? tile.label[0].toUpperCase() : 'A'}</Text>
+      </View>
+    );
+  }
+
   if (tile.iconMode === 'favicon' && !imageError) {
     const domain = tile.url.replace(/^https?:\/\//, '').split('/')[0];
     const faviconUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
