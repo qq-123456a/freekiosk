@@ -1,0 +1,47 @@
+name: Roddy Hybrid APK Build
+on:
+  push:
+    branches:
+      - feature/roddy-hybrid-dashboard-v2-base
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: roddy-android-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install npm dependencies
+        run: npm ci --no-audit --no-fund
+      - name: TypeScript typecheck
+        run: npm run typecheck
+      - name: Hybrid Dashboard tests
+        run: npx jest __tests__/hybridDashboard.test.ts --runInBand
+      - name: Build Android release
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon --stacktrace
+      - name: Stage APK
+        run: |
+          mkdir -p out
+          cp android/app/build/outputs/apk/release/app-release.apk out/freekiosk-roddyversion.apk
+          sha256sum out/freekiosk-roddyversion.apk | tee out/SHA256SUMS
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: freekiosk-roddyversion-apk
+          path: out/*
+          retention-days: 30
