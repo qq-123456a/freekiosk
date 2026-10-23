@@ -25,6 +25,16 @@ const ICON_SIZE = 56;
 const TileIcon: React.FC<{ tile: DashboardTile }> = ({ tile }) => {
   const [imageError, setImageError] = useState(false);
 
+  // Native app entries do not have a website favicon. Always show a clear, offline icon.
+  if (tile.kind === 'app') {
+    const color = getColorForLabel(tile.label);
+    return (
+      <View style={[styles.letterCircle, { backgroundColor: color }]}>
+        <Text style={styles.letterText}>{tile.label ? tile.label[0].toUpperCase() : 'A'}</Text>
+      </View>
+    );
+  }
+
   if (tile.iconMode === 'favicon' && !imageError) {
     const domain = tile.url.replace(/^https?:\/\//, '').split('/')[0];
     const faviconUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
