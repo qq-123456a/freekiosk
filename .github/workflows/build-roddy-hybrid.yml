@@ -31,6 +31,7 @@ jobs:
         run: npx jest __tests__/hybridDashboard.test.ts --runInBand
       - name: Build Android release
         run: |
+          printf 'org.gradle.jvmargs=-Xmx3g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8\norg.gradle.workers.max=2\nandroid.useAndroidX=true\n' >> android/gradle.properties
           cd android
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon --stacktrace
