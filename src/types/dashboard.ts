@@ -1,7 +1,11 @@
 export interface DashboardTile {
   id: string;
   label: string;
+  kind?: 'web' | 'app';
   url: string;
+  packageName?: string;
+  restrictNavigation?: boolean;
+  extraAllowedOrigins?: string[];
   iconMode: 'favicon' | 'image' | 'letter';
   iconValue?: string;
   /** Optional icon background color (hex). Falls back to the label-based color. */
