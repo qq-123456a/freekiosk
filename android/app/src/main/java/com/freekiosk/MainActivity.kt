@@ -346,6 +346,14 @@ class MainActivity : ReactActivity() {
   }
 
   private fun handleNavigationIntent(intent: Intent?) {
+    // Employees return HOME to Hybrid Dashboard; original PIN handler remains unchanged.
+    if (intent?.getBooleanExtra("hybridHomeReturn", false) == true) {
+      blockAutoRelaunch = true
+      intent.removeExtra("hybridHomeReturn")
+      Handler(Looper.getMainLooper()).postDelayed({
+        KioskModule.sendEventFromNative("navigateToHybridHome", null)
+      }, 200)
+    }
     val shouldNavigateToPin = intent?.getBooleanExtra("navigateToPin", false) == true
     val isVoluntary = intent?.getBooleanExtra("voluntaryReturn", false) == true
     
