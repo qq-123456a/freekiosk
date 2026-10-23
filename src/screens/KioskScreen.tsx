@@ -30,6 +30,7 @@ import {
   parseDashboardIconSize,
 } from '../types/dashboard';
 import DashboardGrid from '../components/DashboardGrid';
+import { getWebTileAllowedPatterns, isAndroidDashboardTile } from '../utils/hybridDashboard';
 import type { MediaItem, MediaFitMode } from '../types/mediaPlayer';
 import { ScreenScheduleRule, getNextWakeTime, getActiveSleepRule, getNextSleepTime } from '../types/screenScheduler';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -238,6 +239,8 @@ const KioskScreen: React.FC<KioskScreenProps> = ({ navigation }) => {
   const [dashboardTiles, setDashboardTiles] = useState<DashboardTile[]>([]);
   const [dashboardIconSize, setDashboardIconSize] = useState<DashboardIconSize>(DEFAULT_DASHBOARD_ICON_SIZE);
   const [dashboardShowGrid, setDashboardShowGrid] = useState<boolean>(true);
+  const [activeDashboardWebTile, setActiveDashboardWebTile] = useState<DashboardTile | null>(null);
+  const hybridDefaultStartedRef = useRef(false);
   const [navState, setNavState] = useState<{ canGoBack: boolean; canGoForward: boolean; title: string }>({ canGoBack: false, canGoForward: false, title: '' });
   const [pdfViewerEnabled, setPdfViewerEnabled] = useState<boolean>(false);
   // #239: last value applied to the WebView, to know when a remount is actually needed.
@@ -1702,6 +1705,14 @@ const KioskScreen: React.FC<KioskScreenProps> = ({ navigation }) => {
       }
     );
 
+    // Employee HOME from native apps returns to the existing Dashboard (not PIN).
+    const hybridHomeListener = eventEmitter.addListener('navigateToHybridHome', () => {
+      setActiveDashboardWebTile(null);
+      setDashboardShowGrid(true);
+      setIsAppLaunched(false);
+      OverlayServiceModule.stopOverlayService().catch(() => {});
+    });
+
     // Reset inactivity timer when user taps on external app (event from OverlayService tap handler)
     const screensaverActivityListener = eventEmitter.addListener(
       'screensaverActivity',
@@ -1715,6 +1726,7 @@ const KioskScreen: React.FC<KioskScreenProps> = ({ navigation }) => {
     return () => {
       appReturnedListener.remove();
       navigateToPinListener.remove();
+      hybridHomeListener.remove();
       screensaverActivityListener.remove();
       if (relaunchTimerRef.current) {
         clearTimeout(relaunchTimerRef.current);
@@ -2237,6 +2249,16 @@ const KioskScreen: React.FC<KioskScreenProps> = ({ navigation }) => {
           await KioskModule.stopLockTask();
         } catch {
           // Silent fail
+        }
+      }
+
+      // On initial startup, launch the Android app starred in Dashboard settings.
+      if (savedDisplayMode === 'webview' && savedDashboardMode && !hybridDefaultStartedRef.current) {
+        hybridDefaultStartedRef.current = true;
+        const defaultPkg = await AsyncStorage.getItem('@roddy_hybrid_default_package');
+        const isAllowed = savedDashboardTiles.some(t => isAndroidDashboardTile(t) && t.packageName === defaultPkg);
+        if (defaultPkg && isAllowed && await AppLauncherModule.isAppInstalled(defaultPkg)) {
+          await launchExternalApp(defaultPkg, 1, 1500, 'hybrid_home', 'top-left');
         }
       }
 
@@ -3053,21 +3075,34 @@ const KioskScreen: React.FC<KioskScreenProps> = ({ navigation }) => {
               showTime={statusBarEnabled && showTime}
               theme={statusBarTheme}
               dashboardMode={dashboardModeEnabled}
-              navCanGoBack={navState.canGoBack}
-              navCanGoForward={navState.canGoForward}
+              navCanGoBack={!dashboardShowGrid}
+              navCanGoForward={!dashboardShowGrid && navState.canGoForward}
               navTitle={dashboardShowGrid ? 'Dashboard' : navState.title}
-              showNavBar={!dashboardShowGrid}
-              onNavBack={() => webViewRef.current?.goBack()}
+              showNavBar={true}
+              onNavBack={() => {
+                if (dashboardShowGrid) return;
+                if (navState.canGoBack) webViewRef.current?.goBack();
+                else setDashboardShowGrid(true);
+              }}
               onNavForward={() => webViewRef.current?.goForward()}
-              onNavRefresh={() => webViewRef.current?.reload()}
-              onNavHome={() => setDashboardShowGrid(true)}
+              onNavRefresh={() => { if (!dashboardShowGrid) webViewRef.current?.reload(); }}
+              onNavHome={() => { setActiveDashboardWebTile(null); setDashboardShowGrid(true); }}
             />
           )}
           {dashboardModeEnabled && dashboardShowGrid ? (
             <DashboardGrid
               tiles={dashboardTiles}
               iconSize={dashboardIconSize}
-              onTilePress={(tile) => {
+              onTilePress={async (tile) => {
+                if (tile.kind === 'app') {
+                  if (isAndroidDashboardTile(tile) && tile.packageName && await AppLauncherModule.isAppInstalled(tile.packageName)) {
+                    await launchExternalApp(tile.packageName, 1, 1500, 'hybrid_home', 'top-left');
+                  } else {
+                    console.warn('[HybridDashboard] Android package not installed/invalid:', tile.packageName);
+                  }
+                  return;
+                }
+                setActiveDashboardWebTile(tile);
                 setUrl(tile.url);
                 setDashboardShowGrid(false);
               }}
@@ -3097,8 +3132,8 @@ const KioskScreen: React.FC<KioskScreenProps> = ({ navigation }) => {
                   markUserInteraction();
                 }
               }}
-              urlFilterMode={urlFilterEnabled ? urlFilterMode : undefined}
-              urlFilterPatterns={urlFilterEnabled ? urlFilterList : undefined}
+              urlFilterMode={getWebTileAllowedPatterns(activeDashboardWebTile) !== null ? 'whitelist' : urlFilterEnabled ? urlFilterMode : undefined}
+              urlFilterPatterns={getWebTileAllowedPatterns(activeDashboardWebTile) ?? (urlFilterEnabled ? urlFilterList : undefined)}
               urlFilterShowFeedback={urlFilterShowFeedback}
               pdfViewerEnabled={pdfViewerEnabled}
               windowPrintEnabled={windowPrintEnabled}
