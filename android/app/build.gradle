@@ -72,7 +72,7 @@ def enableProguardInReleaseBuilds = true
  *   APK  (self-update ON):  ./gradlew assembleRelease
  *   AAB  (self-update OFF): ./gradlew bundleRelease -Pplaystore
  */
-def enableSelfUpdate = !project.hasProperty('playstore')
+def enableSelfUpdate = false // Roddy fork must never replace itself with upstream APK
 
 /**
  * The preferred build flavor of JavaScriptCore (JSC)
@@ -95,11 +95,11 @@ android {
 
     namespace "com.freekiosk"
     defaultConfig {
-        applicationId "com.freekiosk"
+        applicationId "com.freekiosk.roddy"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 44
-        versionName "1.2.20"
+        versionCode 200001
+        versionName "2.0.0-roddy.1"
 
         // Expose self-update flag to both Kotlin (BuildConfig) and JS (via UpdateModule constants)
         buildConfigField "boolean", "ENABLE_SELF_UPDATE", "${enableSelfUpdate}"
