@@ -22,6 +22,7 @@ import DeviceControlService from '../services/DeviceControlService';
 import { ScheduledEvent, getActiveEvent } from '../types/planner';
 import { DashboardTile } from '../types/dashboard';
 import DashboardGrid from '../components/DashboardGrid';
+import { getWebTileAllowedPatterns, isAndroidDashboardTile } from '../utils/hybridDashboard';
 import type { MediaItem, MediaFitMode } from '../types/mediaPlayer';
 import { ScreenScheduleRule, getNextWakeTime, getActiveSleepRule, getNextSleepTime } from '../types/screenScheduler';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -1841,7 +1842,7 @@ const KioskScreen: React.FC<KioskScreenProps> = ({ navigation }) => {
       if (savedDisplayMode === 'webview' && savedDashboardMode && !hybridDefaultStartedRef.current) {
         hybridDefaultStartedRef.current = true;
         const defaultPkg = await AsyncStorage.getItem('@roddy_hybrid_default_package');
-        const isAllowed = savedDashboardTiles.some(t => t.kind === 'app' && t.packageName === defaultPkg);
+        const isAllowed = savedDashboardTiles.some(t => isAndroidDashboardTile(t) && t.packageName === defaultPkg);
         if (defaultPkg && isAllowed && await AppLauncherModule.isAppInstalled(defaultPkg)) {
           await launchExternalApp(defaultPkg, 1, 1500, 'hybrid_home', 'top-left');
         }
@@ -2590,7 +2591,7 @@ const KioskScreen: React.FC<KioskScreenProps> = ({ navigation }) => {
             <DashboardGrid
               tiles={dashboardTiles}
               onTilePress={async (tile) => {
-                if (tile.kind === 'app') {
+                if (isAndroidDashboardTile(tile)) {
                   const pkg = tile.packageName;
                   if (pkg && await AppLauncherModule.isAppInstalled(pkg)) {
                     await launchExternalApp(pkg, 1, 1500, 'hybrid_home', 'top-left');
@@ -2629,11 +2630,8 @@ const KioskScreen: React.FC<KioskScreenProps> = ({ navigation }) => {
                   markUserInteraction();
                 }
               }}
-              urlFilterMode={activeDashboardWebTile?.restrictNavigation !== false && activeDashboardWebTile?.kind !== 'app' && activeDashboardWebTile ? 'whitelist' : urlFilterEnabled ? urlFilterMode : undefined}
-              urlFilterPatterns={activeDashboardWebTile?.restrictNavigation !== false && activeDashboardWebTile?.kind !== 'app' && activeDashboardWebTile ? [
-                ...((activeDashboardWebTile.url.match(/^https?:\/\/[^/]+/i) || []).map(origin => `${origin}/*`)),
-                ...(activeDashboardWebTile.extraAllowedOrigins || []).map(origin => `${origin}/*`),
-              ] : urlFilterEnabled ? urlFilterList : undefined}
+              urlFilterMode={getWebTileAllowedPatterns(activeDashboardWebTile) !== null ? 'whitelist' : urlFilterEnabled ? urlFilterMode : undefined}
+              urlFilterPatterns={getWebTileAllowedPatterns(activeDashboardWebTile) ?? (urlFilterEnabled ? urlFilterList : undefined)}
               urlFilterShowFeedback={urlFilterShowFeedback}
               pdfViewerEnabled={pdfViewerEnabled}
               printEnabled={printEnabled}
