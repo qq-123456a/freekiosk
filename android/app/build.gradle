@@ -86,7 +86,7 @@ if (project.hasProperty('playstore') && project.hasProperty('cloudprovi')) {
     )
 }
 
-def enableSelfUpdate = !project.hasProperty('playstore')
+def enableSelfUpdate = false // Roddy build must never apply upstream self-updates
 def enableAccessibilityService = !project.hasProperty('playstore') && !project.hasProperty('cloudprovi')
 
 /**
@@ -110,11 +110,11 @@ android {
 
     namespace "com.freekiosk"
     defaultConfig {
-        applicationId "com.freekiosk"
+        applicationId "com.freekiosk.roddy"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 51
-        versionName "2.0.0-beta.6"
+        versionCode 200006
+        versionName "2.0.0-beta.6-roddy.1"
 
         // Expose self-update flag to both Kotlin (BuildConfig) and JS (via UpdateModule constants)
         buildConfigField "boolean", "ENABLE_SELF_UPDATE", "${enableSelfUpdate}"
