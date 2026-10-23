@@ -193,6 +193,7 @@ const KioskScreen: React.FC<KioskScreenProps> = ({ navigation }) => {
   const [dashboardModeEnabled, setDashboardModeEnabled] = useState<boolean>(false);
   const [dashboardTiles, setDashboardTiles] = useState<DashboardTile[]>([]);
   const [dashboardShowGrid, setDashboardShowGrid] = useState<boolean>(true);
+  const [activeDashboardWebTile, setActiveDashboardWebTile] = useState<DashboardTile | null>(null);
   // Launch the starred native app only once after boot, never on every settings return.
   const hybridDefaultStartedRef = useRef(false);
   const [navState, setNavState] = useState<{ canGoBack: boolean; canGoForward: boolean; title: string }>({ canGoBack: false, canGoForward: false, title: '' });
@@ -1386,6 +1387,7 @@ const KioskScreen: React.FC<KioskScreenProps> = ({ navigation }) => {
 
     // Native HOME overlay returns here without passing through the administrator PIN.
     const hybridHomeListener = eventEmitter.addListener('navigateToHybridHome', () => {
+      setActiveDashboardWebTile(null);
       setDashboardShowGrid(true);
       setIsAppLaunched(false);
       // HOME is never a PIN navigation; leave the administrator flow unchanged.
@@ -2581,7 +2583,7 @@ const KioskScreen: React.FC<KioskScreenProps> = ({ navigation }) => {
               }}
               onNavForward={() => webViewRef.current?.goForward()}
               onNavRefresh={() => { if (!dashboardShowGrid) webViewRef.current?.reload(); }}
-              onNavHome={() => setDashboardShowGrid(true)}
+              onNavHome={() => { setActiveDashboardWebTile(null); setDashboardShowGrid(true); }}
             />
           )}
           {dashboardModeEnabled && dashboardShowGrid ? (
@@ -2597,6 +2599,7 @@ const KioskScreen: React.FC<KioskScreenProps> = ({ navigation }) => {
                   }
                   return;
                 }
+                setActiveDashboardWebTile(tile);
                 setUrl(tile.url);
                 setDashboardShowGrid(false);
               }}
@@ -2626,8 +2629,11 @@ const KioskScreen: React.FC<KioskScreenProps> = ({ navigation }) => {
                   markUserInteraction();
                 }
               }}
-              urlFilterMode={urlFilterEnabled ? urlFilterMode : undefined}
-              urlFilterPatterns={urlFilterEnabled ? urlFilterList : undefined}
+              urlFilterMode={activeDashboardWebTile?.restrictNavigation !== false && activeDashboardWebTile?.kind !== 'app' && activeDashboardWebTile ? 'whitelist' : urlFilterEnabled ? urlFilterMode : undefined}
+              urlFilterPatterns={activeDashboardWebTile?.restrictNavigation !== false && activeDashboardWebTile?.kind !== 'app' && activeDashboardWebTile ? [
+                ...((activeDashboardWebTile.url.match(/^https?:\/\/[^/]+/i) || []).map(origin => `${origin}/*`)),
+                ...(activeDashboardWebTile.extraAllowedOrigins || []).map(origin => `${origin}/*`),
+              ] : urlFilterEnabled ? urlFilterList : undefined}
               urlFilterShowFeedback={urlFilterShowFeedback}
               pdfViewerEnabled={pdfViewerEnabled}
               printEnabled={printEnabled}
