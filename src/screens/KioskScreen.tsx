@@ -1388,6 +1388,7 @@ const KioskScreen: React.FC<KioskScreenProps> = ({ navigation }) => {
     const hybridHomeListener = eventEmitter.addListener('navigateToHybridHome', () => {
       setDashboardShowGrid(true);
       setIsAppLaunched(false);
+      // HOME is never a PIN navigation; leave the administrator flow unchanged.
       OverlayServiceModule.stopOverlayService().catch(() => {});
     });
 
@@ -2569,13 +2570,17 @@ const KioskScreen: React.FC<KioskScreenProps> = ({ navigation }) => {
               showTime={statusBarEnabled && showTime}
               theme={statusBarTheme}
               dashboardMode={dashboardModeEnabled}
-              navCanGoBack={navState.canGoBack}
-              navCanGoForward={navState.canGoForward}
+              navCanGoBack={!dashboardShowGrid}
+              navCanGoForward={!dashboardShowGrid && navState.canGoForward}
               navTitle={dashboardShowGrid ? 'Dashboard' : navState.title}
-              showNavBar={!dashboardShowGrid}
-              onNavBack={() => webViewRef.current?.goBack()}
+              showNavBar={true}
+              onNavBack={() => {
+                if (dashboardShowGrid) return;
+                if (navState.canGoBack) webViewRef.current?.goBack();
+                else setDashboardShowGrid(true);
+              }}
               onNavForward={() => webViewRef.current?.goForward()}
-              onNavRefresh={() => webViewRef.current?.reload()}
+              onNavRefresh={() => { if (!dashboardShowGrid) webViewRef.current?.reload(); }}
               onNavHome={() => setDashboardShowGrid(true)}
             />
           )}
