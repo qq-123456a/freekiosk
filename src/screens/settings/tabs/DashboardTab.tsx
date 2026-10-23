@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { View, Text, TouchableOpacity, StyleSheet, Alert, Image } from 'react-native';
 import {
   SettingsSection,
@@ -10,6 +11,7 @@ import { Colors, Spacing, Typography } from '../../../theme';
 import { DashboardTile } from '../../../types/dashboard';
 import { getColorForLabel } from '../../../utils/dashboardColors';
 import { StorageService } from '../../../utils/storage';
+import { createManagedApp, isValidPackageName } from '../../../types/managedApps';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 
 interface DashboardTabProps {
@@ -30,6 +32,9 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ dashboardModeEnabled }) => 
   // Editor state
   const [editLabel, setEditLabel] = useState('');
   const [editUrl, setEditUrl] = useState('');
+  const [editKind, setEditKind] = useState<'web' | 'app'>('web');
+  const [editPackageName, setEditPackageName] = useState('');
+  const [defaultApp, setDefaultApp] = useState('');
   const [editIconMode, setEditIconMode] = useState<DashboardTile['iconMode']>('favicon');
   const [editIconValue, setEditIconValue] = useState('');
 
@@ -40,18 +45,30 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ dashboardModeEnabled }) => 
   const loadTiles = async () => {
     const saved = await StorageService.getDashboardTiles();
     setTiles(saved.sort((a, b) => a.order - b.order));
+    setDefaultApp((await AsyncStorage.getItem('@roddy_hybrid_default_package')) || '');
   };
 
   const saveTiles = async (updated: DashboardTile[]) => {
     const sorted = updated.sort((a, b) => a.order - b.order);
     setTiles(sorted);
     await StorageService.saveDashboardTiles(sorted);
+    // App tiles must be allowed by Device Owner lock-task policy. Keep other managed apps.
+    const current = await StorageService.getManagedApps();
+    const next = [...current];
+    for (const tile of sorted) {
+      if (tile.kind === 'app' && tile.packageName && !next.some(app => app.packageName === tile.packageName)) {
+        next.push(createManagedApp(tile.packageName, tile.label, { showOnHomeScreen: false }));
+      }
+    }
+    await StorageService.saveManagedApps(next);
   };
 
   const openAddEditor = () => {
     setEditingTile(null);
     setEditLabel('');
     setEditUrl('');
+    setEditKind('web');
+    setEditPackageName('');
     setEditIconMode('favicon');
     setEditIconValue('');
     setShowEditor(true);
@@ -61,6 +78,8 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ dashboardModeEnabled }) => 
     setEditingTile(tile);
     setEditLabel(tile.label);
     setEditUrl(tile.url);
+    setEditKind(tile.kind === 'app' ? 'app' : 'web');
+    setEditPackageName(tile.packageName || '');
     setEditIconMode(tile.iconMode);
     setEditIconValue(tile.iconValue || '');
     setShowEditor(true);
@@ -71,17 +90,21 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ dashboardModeEnabled }) => 
       Alert.alert('Error', 'Please enter a label');
       return;
     }
-    if (!editUrl.trim()) {
+    if (editKind === 'app' && !isValidPackageName(editPackageName.trim())) {
+      Alert.alert('Invalid package', 'Enter an installed Android app package, for example co.tanda.timeclock');
+      return;
+    }
+    if (editKind === 'web' && !editUrl.trim()) {
       Alert.alert('Error', 'Please enter a URL');
       return;
     }
-    let finalUrl = editUrl.trim();
+    let finalUrl = editKind === 'app' ? '' : editUrl.trim();
     const urlLower = finalUrl.toLowerCase();
-    if (urlLower.startsWith('javascript:') || urlLower.startsWith('data:') || urlLower.startsWith('file://')) {
+    if (editKind === 'web' && (urlLower.startsWith('javascript:') || urlLower.startsWith('data:') || urlLower.startsWith('file://'))) {
       Alert.alert('Security Error', 'This type of URL is not allowed. Use http:// or https://');
       return;
     }
-    if (!urlLower.startsWith('http://') && !urlLower.startsWith('https://')) {
+    if (editKind === 'web' && !urlLower.startsWith('http://') && !urlLower.startsWith('https://')) {
       if (finalUrl.includes('.')) {
         finalUrl = 'https://' + finalUrl;
       } else {
@@ -94,7 +117,7 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ dashboardModeEnabled }) => 
       // Update existing
       const updated = tiles.map(t =>
         t.id === editingTile.id
-          ? { ...t, label: editLabel.trim(), url: finalUrl, iconMode: editIconMode, iconValue: editIconMode === 'image' ? editIconValue.trim() : undefined }
+          ? { ...t, label: editLabel.trim(), kind: editKind, url: finalUrl, packageName: editKind === 'app' ? editPackageName.trim() : undefined, iconMode: editKind === 'app' ? 'letter' as const : editIconMode, iconValue: editKind === 'web' && editIconMode === 'image' ? editIconValue.trim() : undefined }
           : t,
       );
       await saveTiles(updated);
@@ -103,8 +126,10 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ dashboardModeEnabled }) => 
       const newTile: DashboardTile = {
         id: Date.now().toString(36) + Math.random().toString(36).slice(2),
         label: editLabel.trim(),
+        kind: editKind,
         url: finalUrl,
-        iconMode: editIconMode,
+        packageName: editKind === 'app' ? editPackageName.trim() : undefined,
+        iconMode: editKind === 'app' ? 'letter' : editIconMode,
         iconValue: editIconMode === 'image' ? editIconValue.trim() : undefined,
         order: tiles.length,
       };
@@ -147,7 +172,7 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ dashboardModeEnabled }) => 
   };
 
   const renderTilePreview = (tile: DashboardTile) => {
-    if (tile.iconMode === 'letter') {
+    if (tile.kind === 'app' || tile.iconMode === 'letter') {
       const color = getColorForLabel(tile.label);
       const letter = tile.label ? tile.label[0].toUpperCase() : '?';
       return (
@@ -184,6 +209,7 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ dashboardModeEnabled }) => 
   return (
     <View>
       <SettingsSection title="Dashboard Tiles" icon="view-dashboard">
+        <Text style={styles.infoText}>Mix Websites and Android Apps. Tap the star on an app entry to start it automatically at boot; tap again to disable.</Text>
         {tiles.map((tile, index) => (
           <View key={tile.id} style={styles.tileRow}>
             {/* Reorder arrows */}
@@ -206,9 +232,22 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ dashboardModeEnabled }) => 
             {/* Label & URL */}
             <View style={styles.tileInfo}>
               <Text style={styles.tileLabel} numberOfLines={1}>{tile.label}</Text>
-              <Text style={styles.tileUrl} numberOfLines={1}>{tile.url}</Text>
+              <Text style={styles.tileUrl} numberOfLines={1}>{tile.kind === 'app' ? `Android: ${tile.packageName}` : tile.url}</Text>
             </View>
 
+            {tile.kind === 'app' && (
+              <TouchableOpacity
+                accessibilityLabel={defaultApp === tile.packageName ? 'Default at startup' : 'Set default at startup'}
+                onPress={async () => {
+                  const value = defaultApp === tile.packageName ? '' : (tile.packageName || '');
+                  await AsyncStorage.setItem('@roddy_hybrid_default_package', value);
+                  setDefaultApp(value);
+                }}
+                style={styles.actionButton}
+              >
+                <MaterialCommunityIcons name={defaultApp === tile.packageName ? 'star' : 'star-outline'} size={20} color={Colors.primary} />
+              </TouchableOpacity>
+            )}
             {/* Edit / Delete */}
             <TouchableOpacity onPress={() => openEditEditor(tile)} style={styles.actionButton}>
               <MaterialCommunityIcons name="pencil" size={18} color={Colors.primary} />
@@ -236,18 +275,28 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ dashboardModeEnabled }) => 
             placeholder="My Dashboard"
           />
           <View style={styles.editorSpacer} />
-          <SettingsInput
-            label="URL"
-            value={editUrl}
-            onChangeText={setEditUrl}
-            placeholder="https://example.com"
-            keyboardType="url"
-          />
+          <Text style={styles.fieldLabel}>Tile Type</Text>
+          <View style={styles.iconModeRow}>
+            {(['web', 'app'] as const).map(kind => (
+              <TouchableOpacity key={kind} onPress={() => setEditKind(kind)}
+                style={[styles.iconModeButton, editKind === kind && styles.iconModeButtonActive]}>
+                <Text style={[styles.iconModeText, editKind === kind && styles.iconModeTextActive]}>
+                  {kind === 'web' ? 'Website' : 'Android App'}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <View style={styles.editorSpacer} />
+          {editKind === 'app' ? (
+            <SettingsInput label="Android Package" value={editPackageName} onChangeText={setEditPackageName} placeholder="co.tanda.timeclock" />
+          ) : (
+            <SettingsInput label="URL" value={editUrl} onChangeText={setEditUrl} placeholder="https://example.com" keyboardType="url" />
+          )}
           <View style={styles.editorSpacer} />
 
-          {/* Icon mode selector */}
-          <Text style={styles.fieldLabel}>Icon Mode</Text>
-          <View style={styles.iconModeRow}>
+          {/* Website icon selection; Android app tiles use a built-in icon. */}
+          {editKind === 'web' && <Text style={styles.fieldLabel}>Icon Mode</Text>}
+          {editKind === 'web' && <View style={styles.iconModeRow}>
             {ICON_MODES.map(mode => (
               <TouchableOpacity
                 key={mode.value}
@@ -267,9 +316,9 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ dashboardModeEnabled }) => 
                 </Text>
               </TouchableOpacity>
             ))}
-          </View>
+          </View>}
 
-          {editIconMode === 'image' && (
+          {editKind === 'web' && editIconMode === 'image' && (
             <>
               <View style={styles.editorSpacer} />
               <SettingsInput
@@ -290,8 +339,10 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ dashboardModeEnabled }) => 
                 {renderTilePreview({
                   id: 'preview',
                   label: editLabel,
-                  url: editUrl,
-                  iconMode: editIconMode,
+                  url: editKind === 'app' ? '' : editUrl,
+                  kind: editKind,
+                  packageName: editPackageName,
+                  iconMode: editKind === 'app' ? 'letter' : editIconMode,
                   iconValue: editIconValue,
                   order: 0,
                 })}
