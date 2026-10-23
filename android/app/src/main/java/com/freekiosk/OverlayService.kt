@@ -457,7 +457,9 @@ class OverlayService : Service() {
 
     private fun createOverlay() {
         DebugLog.d("OverlayService", "createOverlay() called with returnMode='$returnMode', buttonPosition='$buttonPosition'")
-        if (returnMode == "button") {
+        if (returnMode == "hybrid_home") {
+            createHybridDashboardOverlay()
+        } else if (returnMode == "button") {
             DebugLog.d("OverlayService", "Creating BUTTON mode overlay")
             createButtonModeOverlay()
         } else {
@@ -466,6 +468,117 @@ class OverlayService : Service() {
         }
     }
     
+    /**
+     * Hybrid Dashboard toolbar for external Android apps.
+     * Matches the Dashboard WebView navigation treatment (dark top bar, Back, Home).
+     * This is employee navigation and deliberately NEVER goes through the admin PIN.
+     */
+    private fun createHybridDashboardOverlay() {
+        val density = resources.displayMetrics.density
+        fun dp(value: Int): Int = (value * density + 0.5f).toInt()
+
+        val toolbar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setBackgroundColor(Color.argb(225, 0, 0, 0))
+        }
+
+        val back = TextView(this).apply {
+            text = "‹"
+            textSize = 25f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            contentDescription = "Back"
+            setOnClickListener {
+                // AccessibilityService is optional. Fail closed if Back cannot be sent;
+                // do not open system settings or the Android launcher.
+                if (!FreeKioskAccessibilityService.sendKey(android.view.KeyEvent.KEYCODE_BACK)) {
+                    DebugLog.d("OverlayService", "Hybrid Back unavailable (accessibility disabled)")
+                }
+            }
+        }
+        toolbar.addView(back, LinearLayout.LayoutParams(dp(42), dp(36)))
+
+        val home = TextView(this).apply {
+            text = "⌂"
+            textSize = 23f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            contentDescription = "HOME - Hybrid Dashboard"
+            setOnClickListener { returnToHybridDashboard() }
+        }
+        toolbar.addView(home, LinearLayout.LayoutParams(dp(42), dp(36)))
+
+        val title = TextView(this).apply {
+            text = "Dashboard"
+            textSize = 13f
+            gravity = Gravity.CENTER_VERTICAL
+            setTextColor(Color.WHITE)
+            setPadding(dp(6), 0, 0, 0)
+        }
+        toolbar.addView(title, LinearLayout.LayoutParams(0, dp(36), 1f))
+
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            dp(36),
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            else
+                @Suppress("DEPRECATION")
+                WindowManager.LayoutParams.TYPE_SYSTEM_ALERT,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
+            PixelFormat.TRANSLUCENT
+        ).apply { gravity = Gravity.TOP }
+
+        try {
+            overlayView = toolbar
+            windowManager?.addView(toolbar, params)
+            DebugLog.d("OverlayService", "Hybrid Dashboard toolbar attached")
+        } catch (e: Exception) {
+            overlayView = null
+            DebugLog.errorProduction("OverlayService", "Hybrid toolbar unavailable: ${e.message}")
+        }
+    }
+
+    /**
+     * Return employees to the existing FreeKiosk Dashboard grid without touching
+     * the independent multi-tap + administrator PIN path.
+     */
+    private fun returnToHybridDashboard() {
+        MainActivity.blockAutoRelaunch = true
+        autoRelaunchEnabled = false
+        lockedPackage = null
+        destroyOverlay()
+        try {
+            // Deliver immediately where possible; MainActivity also retries on resume.
+            KioskModule.sendEventFromNative("navigateToHybridHome", null)
+            try {
+                val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+                for (task in activityManager.appTasks) {
+                    if (task.taskInfo.baseActivity?.packageName == packageName) {
+                        task.moveToFront()
+                        break
+                    }
+                }
+            } catch (e: Exception) {
+                DebugLog.d("OverlayService", "Hybrid task move-to-front fallback: ${e.message}")
+            }
+
+            val intent = Intent(this, MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                    Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                putExtra("hybridHomeReturn", true)
+            }
+            startActivity(intent)
+        } catch (e: Exception) {
+            DebugLog.errorProduction("OverlayService", "Hybrid HOME return failed: ${e.message}")
+        } finally {
+            stopSelf()
+        }
+    }
+
     private fun createButtonModeOverlay() {
         // MODE BOUTON: Petit bouton cliquable dans un coin
         // L'utilisateur doit taper N fois SUR le bouton pour retourner aux settings
