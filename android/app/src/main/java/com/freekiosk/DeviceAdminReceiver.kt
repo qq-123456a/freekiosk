@@ -125,6 +125,17 @@ class DeviceAdminReceiver : android.app.admin.DeviceAdminReceiver() {
         super.onDisabled(context, intent)
     }
 
+    override fun onTransferOwnershipComplete(context: Context, bundle: PersistableBundle?) {
+        super.onTransferOwnershipComplete(context, bundle)
+        // The existing Device Owner performs the transfer; Roddy only receives
+        // confirmation. Do not reset settings or silently alter admin policies.
+        context.getSharedPreferences("FreeKioskOwnership", Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean("transfer_completed", true)
+            .apply()
+        Log.i(TAG, "Device Owner ownership transfer completed; existing settings preserved")
+    }
+
     override fun onProfileProvisioningComplete(context: Context, intent: Intent) {
         super.onProfileProvisioningComplete(context, intent)
         persistPendingEnrollment(context, intent)
