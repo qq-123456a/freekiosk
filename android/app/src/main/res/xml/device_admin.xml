@@ -7,4 +7,7 @@
         <force-lock />
         <wipe-data />
     </uses-policies>
+    <!-- Required before an existing DPC can atomically transfer Device Owner to Roddy.
+         This only makes Roddy an eligible TARGET; the existing owner must initiate. -->
+    <support-transfer-ownership />
 </device-admin>
