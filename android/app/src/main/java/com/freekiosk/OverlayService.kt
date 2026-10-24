@@ -623,8 +623,9 @@ class OverlayService : Service() {
         // Tanda, so its own WindowManager flag must hold the same screen-on policy.
         //
         // KioskModule.setKeepScreenOn() keeps this preference in SharedPreferences
-        // even while Roddy's Activity is behind Tanda. No permanent CPU wake lock
-        // and no interference with manual power-button sleep.
+        // even while Roddy's Activity is behind Tanda. A scoped legacy screen
+        // wake lock supplements this window flag only while native Tanda is open,
+        // and is explicitly released when HOME returns to the Dashboard.
         val keepScreenOn = getSharedPreferences("FreeKioskSettings", Context.MODE_PRIVATE)
             .getBoolean("keep_screen_on", true)
         val overlayWindowFlags =
