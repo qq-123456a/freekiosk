@@ -257,6 +257,11 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ dashboardModeEnabled }) => 
         </View>
       </SettingsSection>
 
+      <SettingsInfoBox variant="info">
+        <Text style={styles.infoText}>
+          Native app full-screen: the existing Device Owner FreeKiosk must allow both FreeKiosk Roddy and the chosen app in Managed Apps / Lock Task. Without that, Android's top status bar and bottom navigation bar stay visible. Your admin PIN is unchanged.
+        </Text>
+      </SettingsInfoBox>
       <SettingsSection title={t('dashboard.tilesTitle')} icon="view-dashboard">
         {tiles.map((tile, index) => (
           <View key={tile.id} style={styles.tileRow}>
