@@ -17,6 +17,8 @@ interface OverlayServiceModuleType {
   // the overlay can't be shown, so the caller falls back to bringToFront().
   showDimOverlay(level: number): Promise<boolean>;
   hideDimOverlay(): Promise<boolean>;
+  /** True while Tanda/another Android tile is open with a visible HOME overlay. */
+  isHybridNativeAppSessionActive(): Promise<boolean>;
   stopOverlayService(): Promise<boolean>;
   setButtonOpacity(opacity: number): Promise<boolean>;
   getButtonOpacity(): Promise<number>;
