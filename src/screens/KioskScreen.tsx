@@ -242,6 +242,7 @@ const KioskScreen: React.FC<KioskScreenProps> = ({ navigation }) => {
   const [dashboardShowGrid, setDashboardShowGrid] = useState<boolean>(true);
   const [activeDashboardWebTile, setActiveDashboardWebTile] = useState<DashboardTile | null>(null);
   const hybridDefaultStartedRef = useRef(false);
+  const hybridFullScreenHintShownRef = useRef(false);
   const [navState, setNavState] = useState<{ canGoBack: boolean; canGoForward: boolean; title: string }>({ canGoBack: false, canGoForward: false, title: '' });
   const [pdfViewerEnabled, setPdfViewerEnabled] = useState<boolean>(false);
   // #239: last value applied to the WebView, to know when a remount is actually needed.
@@ -2237,9 +2238,17 @@ const KioskScreen: React.FC<KioskScreenProps> = ({ navigation }) => {
         }
       }
 
-      if (savedKioskEnabled) {
+      const hasHybridAppTiles = savedDisplayMode === 'webview' && savedDashboardMode &&
+        savedDashboardTiles.some(isAndroidDashboardTile);
+      if (hasHybridAppTiles) {
+        // Hybrid Dashboard must not enable ordinary Android screen pinning:
+        // a pinned React Native task prevents Tanda's own activity from coming forward.
+        // The native bridge enters full Lock Task only when the *existing* Device
+        // Owner has allowlisted this package and the target Android app.
+        // Also never stop a running owner-managed Lock Task on settings reload.
+        console.log('[HybridDashboard] Native-app tiles detected, leaving lock-task permissions to Device Owner');
+      } else if (savedKioskEnabled) {
         try {
-          // Pass external app package so it gets added to whitelist
           const packageToWhitelist = savedDisplayMode === 'external_app' && savedExternalAppPackage ? savedExternalAppPackage : undefined;
           await KioskModule.startLockTask(packageToWhitelist, savedAllowPowerButton, savedAllowNotifications, savedAllowSystemInfo, savedEmergencyEnabled);
         } catch {
@@ -2935,6 +2944,35 @@ const KioskScreen: React.FC<KioskScreenProps> = ({ navigation }) => {
       const finalTapTimeout = tapTimeout ?? current.returnTapTimeout;
       const finalReturnMode = mode ?? current.returnMode;
       const finalButtonPosition = buttonPos ?? current.returnButtonPosition;
+
+      if (finalReturnMode === 'hybrid_home') {
+        const lockResult = await KioskModule.tryEnterHybridLockTask(packageName).catch(() => 'start_failed');
+        if (lockResult === 'pinned') {
+          Alert.alert(
+            'Screen pinning is active',
+            'Android screen pinning cannot switch between separate apps. Disable screen pinning, then allow the existing Device Owner to manage Roddy and Tanda.',
+          );
+          return;
+        }
+        if (lockResult !== 'locked' && !hybridFullScreenHintShownRef.current) {
+          hybridFullScreenHintShownRef.current = true;
+          Alert.alert(
+            'Full-screen Tanda needs Device Owner permission',
+            'To hide Android\'s top and bottom system bars, allow BOTH FreeKiosk Roddy (com.freekiosk.roddy) and Tanda in the existing Device Owner FreeKiosk Managed Apps list. Until then, Tanda can open but the Android system bars will remain visible.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Open with system bars', onPress: () => {
+                launchExternalApp(packageName, tapCount, tapTimeout, mode, buttonPos)
+                  .catch(error => console.warn('[HybridDashboard] Retry launch failed:', error));
+              } },
+            ],
+          );
+          return;
+        }
+        if (lockResult !== 'locked') {
+          console.log('[HybridDashboard] Device Owner full-screen mode unavailable: ' + lockResult);
+        }
+      }
 
       // A Hybrid Dashboard app is unusable without a persistent HOME toolbar.
       // Overlay permissions belong to this package and are NOT transferred
