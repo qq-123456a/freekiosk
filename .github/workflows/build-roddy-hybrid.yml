@@ -28,7 +28,7 @@ jobs:
       - name: TypeScript typecheck
         run: npm run typecheck
       - name: Hybrid Dashboard tests
-        run: npx jest __tests__/hybridDashboard.test.ts __tests__/hybridFullscreen.test.ts --runInBand
+        run: npx jest __tests__/hybridDashboard.test.ts __tests__/hybridFullscreen.test.ts __tests__/hybridNativeContracts.test.ts --runInBand
       - name: Build Android release
         run: |
           printf 'org.gradle.jvmargs=-Xmx3g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8\norg.gradle.workers.max=2\nandroid.useAndroidX=true\n' >> android/gradle.properties
