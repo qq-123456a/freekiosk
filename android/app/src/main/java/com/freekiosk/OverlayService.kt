@@ -69,6 +69,13 @@ class OverlayService : Service() {
         @Volatile
         private var instance: OverlayService? = null
 
+        /** True only when Android has attached the Hybrid HOME toolbar window. */
+        fun isHybridOverlayReady(): Boolean {
+            val service = instance ?: return false
+            return service.returnMode == "hybrid_home" &&
+                service.overlayView?.isAttachedToWindow == true
+        }
+
         fun updateButtonOpacity(opacity: Float) {
             buttonOpacity = opacity
             instance?.updateButtonAlpha()
