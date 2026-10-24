@@ -1363,6 +1363,10 @@ class KioskModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
             val prefs = reactApplicationContext.getSharedPreferences("FreeKioskSettings", Context.MODE_PRIVATE)
             prefs.edit().putBoolean("keep_screen_on", enabled).apply()
 
+            // MainActivity is behind Tanda during a Hybrid native-app session.
+            // Apply the same option to the active HOME overlay window as well.
+            OverlayService.updateHybridKeepScreenOn(enabled)
+
             val activity = reactApplicationContext.currentActivity
             if (activity != null) {
                 activity.runOnUiThread {
