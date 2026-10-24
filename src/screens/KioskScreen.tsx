@@ -2224,10 +2224,18 @@ const KioskScreen: React.FC<KioskScreenProps> = ({ navigation }) => {
       // WebView mode: 5-tap detection is handled via onUserInteraction callback
       // No need for native overlay, stop it if running
       if (savedDisplayMode === 'webview') {
-        try {
-          await OverlayServiceModule.stopOverlayService();
-        } catch (e) {
-          // Silent fail - might not be running
+        // WebView does not normally need the native overlay; however a native
+        // Hybrid Dashboard tile runs Tanda in its own activity while the display
+        // setting REMAINS webview. Reloading settings/cloud config must not tear
+        // down Tanda's active HOME toolbar and trigger a watchdog return home.
+        const hybridNativeActive = await OverlayServiceModule.isHybridNativeAppSessionActive()
+          .catch(() => false);
+        if (!hybridNativeActive) {
+          try {
+            await OverlayServiceModule.stopOverlayService();
+          } catch (e) {
+            // Silent fail - might not be running
+          }
         }
         // Stop background monitor — it's only relevant in external_app mode
         try {
@@ -2240,14 +2248,17 @@ const KioskScreen: React.FC<KioskScreenProps> = ({ navigation }) => {
 
       const hasHybridAppTiles = savedDisplayMode === 'webview' && savedDashboardMode &&
         savedDashboardTiles.some(isAndroidDashboardTile);
-      if (hasHybridAppTiles) {
-        // Hybrid Dashboard must not enable ordinary Android screen pinning:
-        // a pinned React Native task prevents Tanda's own activity from coming forward.
-        // The native bridge enters full Lock Task only when the *existing* Device
-        // Owner has allowlisted this package and the target Android app.
-        // Also never stop a running owner-managed Lock Task on settings reload.
-        console.log('[HybridDashboard] Native-app tiles detected, leaving lock-task permissions to Device Owner');
+      const ownerForHybrid = hasHybridAppTiles
+        ? await KioskModule.isDeviceOwner().catch(() => false)
+        : false;
+      if (hasHybridAppTiles && !ownerForHybrid) {
+        // Do not use ordinary screen pinning for a native Hybrid tile: it pins
+        // Roddy's React Native task and prevents Tanda from opening.
+        // The separate existing Device Owner can allowlist both apps.
+        console.log('[HybridDashboard] Non-owner native tiles: skip unsupported screen pinning');
       } else if (savedKioskEnabled) {
+        // Roddy IS Device Owner: start true Lock Task and refresh its Managed Apps
+        // allowlist (including Tanda) immediately instead of waiting for a reboot.
         try {
           const packageToWhitelist = savedDisplayMode === 'external_app' && savedExternalAppPackage ? savedExternalAppPackage : undefined;
           await KioskModule.startLockTask(packageToWhitelist, savedAllowPowerButton, savedAllowNotifications, savedAllowSystemInfo, savedEmergencyEnabled);
