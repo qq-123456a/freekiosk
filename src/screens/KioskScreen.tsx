@@ -2945,35 +2945,6 @@ const KioskScreen: React.FC<KioskScreenProps> = ({ navigation }) => {
       const finalReturnMode = mode ?? current.returnMode;
       const finalButtonPosition = buttonPos ?? current.returnButtonPosition;
 
-      if (finalReturnMode === 'hybrid_home') {
-        const lockResult = await KioskModule.tryEnterHybridLockTask(packageName).catch(() => 'start_failed');
-        if (lockResult === 'pinned') {
-          Alert.alert(
-            'Screen pinning is active',
-            'Android screen pinning cannot switch between separate apps. Disable screen pinning, then allow the existing Device Owner to manage Roddy and Tanda.',
-          );
-          return;
-        }
-        if (lockResult !== 'locked' && !hybridFullScreenHintShownRef.current) {
-          hybridFullScreenHintShownRef.current = true;
-          Alert.alert(
-            'Full-screen Tanda needs Device Owner permission',
-            'To hide Android\'s top and bottom system bars, allow BOTH FreeKiosk Roddy (com.freekiosk.roddy) and Tanda in the existing Device Owner FreeKiosk Managed Apps list. Until then, Tanda can open but the Android system bars will remain visible.',
-            [
-              { text: 'Cancel', style: 'cancel' },
-              { text: 'Open with system bars', onPress: () => {
-                launchExternalApp(packageName, tapCount, tapTimeout, mode, buttonPos)
-                  .catch(error => console.warn('[HybridDashboard] Retry launch failed:', error));
-              } },
-            ],
-          );
-          return;
-        }
-        if (lockResult !== 'locked') {
-          console.log('[HybridDashboard] Device Owner full-screen mode unavailable: ' + lockResult);
-        }
-      }
-
       // A Hybrid Dashboard app is unusable without a persistent HOME toolbar.
       // Overlay permissions belong to this package and are NOT transferred
       // from an existing FreeKiosk installation, even on the same tablet.
@@ -3022,6 +2993,41 @@ const KioskScreen: React.FC<KioskScreenProps> = ({ navigation }) => {
         }
         // Preserve the original behavior for existing non-hybrid external-app modes.
       }
+
+      // Enter full-device Lock Task only AFTER the floating HOME control has
+      // attached. Otherwise a missing overlay permission could trap employees
+      // in a locked screen that offers no employee-safe navigation.
+      if (finalReturnMode === 'hybrid_home') {
+        const lockResult = await KioskModule.tryEnterHybridLockTask(packageName).catch(() => 'start_failed');
+        if (lockResult === 'pinned') {
+          await OverlayServiceModule.stopOverlayService().catch(() => {});
+          Alert.alert(
+            'Screen pinning is active',
+            'Android screen pinning cannot switch between separate apps. Disable screen pinning, then allow the existing Device Owner to manage Roddy and Tanda.',
+          );
+          return;
+        }
+        if (lockResult !== 'locked' && !hybridFullScreenHintShownRef.current) {
+          hybridFullScreenHintShownRef.current = true;
+          await OverlayServiceModule.stopOverlayService().catch(() => {});
+          Alert.alert(
+            'Full-screen Tanda needs Device Owner permission',
+            'To hide Android\'s top and bottom system bars, allow BOTH FreeKiosk Roddy (com.freekiosk.roddy) and Tanda in the existing Device Owner FreeKiosk Managed Apps list. Until then, Tanda can open but the Android system bars will remain visible.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Open with system bars', onPress: () => {
+                launchExternalApp(packageName, tapCount, tapTimeout, mode, buttonPos)
+                  .catch(error => console.warn('[HybridDashboard] Retry launch failed:', error));
+              } },
+            ],
+          );
+          return;
+        }
+        if (lockResult !== 'locked') {
+          console.log('[HybridDashboard] Device Owner full-screen mode unavailable: ' + lockResult);
+        }
+      }
+
 
       await AppLauncherModule.launchExternalApp(packageName);
       setIsAppLaunched(true);
