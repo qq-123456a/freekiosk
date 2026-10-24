@@ -500,7 +500,11 @@ class OverlayService : Service() {
                 // AccessibilityService is optional. Fail closed if Back cannot be sent;
                 // do not open system settings or the Android launcher.
                 if (!FreeKioskAccessibilityService.sendKey(android.view.KeyEvent.KEYCODE_BACK)) {
-                    DebugLog.d("OverlayService", "Hybrid Back unavailable (accessibility disabled)")
+                    // Without accessibility service, ordinary apps cannot inject Back
+                    // into another process. Return to the safe Dashboard instead of
+                    // leaving a visible but non-functional control.
+                    DebugLog.d("OverlayService", "Hybrid Back unavailable; returning to Dashboard")
+                    returnToHybridDashboard()
                 }
             }
         }
