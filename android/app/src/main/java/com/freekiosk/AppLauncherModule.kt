@@ -52,7 +52,12 @@ class AppLauncherModule(reactContext: ReactApplicationContext) : ReactContextBas
                 // Si Lock Task est activé, s'assurer que l'app est dans la whitelist AVANT de lancer
                 if (currentActivity != null && currentActivity is MainActivity) {
                     val mainActivity = currentActivity as MainActivity
-                    if (mainActivity.isTaskLocked()) {
+                    if (mainActivity.isTaskLocked() && !hybridDashboard) {
+                        // Single App retains its existing launcher policy refresh.
+                        // For a Dashboard native tile, KioskModule.startLockTask()
+                        // ALREADY ran the identical Single App policy/whitelist
+                        // immediately before launch. Reapplying settings here can
+                        // overwrite those flags and show SystemUI above Tanda.
                         DebugLog.d("AppLauncherModule", "In Lock Task mode - updating whitelist and features before launch")
                         
                         try {
@@ -75,17 +80,11 @@ class AppLauncherModule(reactContext: ReactApplicationContext) : ReactContextBas
                                         cursor.close()
                                         
                                         val cursor2 = db.rawQuery("SELECT value FROM catalystLocalStorage WHERE key = ?", arrayOf("@kiosk_allow_notifications"))
-                                        val savedAllowNotifications = if (cursor2.moveToFirst()) cursor2.getString(0) == "true" else false
-                                        // The selected native Tanda activity must behave like the
-                                        // immersive WebView Dashboard. Without this override the
-                                        // generic launcher silently RE-ENABLED the status bar that
-                                        // KioskModule.startLockTask(... false, false ...) disabled.
-                                        val allowNotifications = !hybridDashboard && savedAllowNotifications
+                                        val allowNotifications = if (cursor2.moveToFirst()) cursor2.getString(0) == "true" else false
                                         cursor2.close()
                                         
                                         val cursor3 = db.rawQuery("SELECT value FROM catalystLocalStorage WHERE key = ?", arrayOf("@kiosk_allow_system_info"))
-                                        val savedAllowSystemInfo = if (cursor3.moveToFirst()) cursor3.getString(0) == "true" else false
-                                        val allowSystemInfo = !hybridDashboard && savedAllowSystemInfo
+                                        val allowSystemInfo = if (cursor3.moveToFirst()) cursor3.getString(0) == "true" else false
                                         cursor3.close()
                                         db.close()
                                         
@@ -120,14 +119,9 @@ class AppLauncherModule(reactContext: ReactApplicationContext) : ReactContextBas
 
                                     dpm.setLockTaskFeatures(adminComponent, lockTaskFeatures)
                                     DebugLog.d("AppLauncherModule", "Lock task features applied before launching external app (hybridDashboard=$hybridDashboard)")
-                                    if (hybridDashboard) {
-                                        val actualFlags = dpm.getLockTaskFeatures(adminComponent)
-                                        val visibleSystemUi = android.app.admin.DevicePolicyManager.LOCK_TASK_FEATURE_SYSTEM_INFO or
-                                            android.app.admin.DevicePolicyManager.LOCK_TASK_FEATURE_NOTIFICATIONS
-                                        if ((actualFlags and visibleSystemUi) != 0) {
-                                            throw IllegalStateException("Hybrid status bar flags unexpectedly enabled after policy update: $actualFlags")
-                                        }
-                                    }
+                                    // The native Hybrid tile path intentionally does not enter this
+                                    // legacy feature-refresh block. Owner policy is applied by
+                                    // the same KioskModule.startLockTask() used for Single App.
                                 }
                                 
                                 // Mettre à jour la whitelist pour inclure cette app
