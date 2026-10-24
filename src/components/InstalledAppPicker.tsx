@@ -12,6 +12,7 @@ import {
 import AppLauncherModule, { type AppInfoAll } from '../utils/AppLauncherModule';
 import { Colors, Spacing, Typography } from '../theme';
 import Icon from './Icon';
+import { filterInstalledApps } from '../utils/hybridDashboard';
 
 type Props = {
   visible: boolean;
@@ -44,11 +45,7 @@ export default function InstalledAppPicker({ visible, selectedPackage, onClose, 
     return () => { active = false; };
   }, [visible]);
 
-  const term = query.trim().toLowerCase();
-  const apps = allApps.filter(app =>
-    (showAllPackages || app.hasLauncherActivity) &&
-    (!term || app.appName.toLowerCase().includes(term) || app.packageName.toLowerCase().includes(term))
-  );
+  const apps = filterInstalledApps(allApps, query, showAllPackages);
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
