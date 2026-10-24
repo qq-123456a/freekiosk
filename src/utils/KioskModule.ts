@@ -4,6 +4,8 @@ interface KioskModuleInterface {
   exitKioskMode(): Promise<boolean>;
   startLockTask(externalAppPackage?: string | null, allowPowerButton?: boolean, allowNotifications?: boolean, allowSystemInfo?: boolean, allowEmergencyCall?: boolean): Promise<boolean>;
   stopLockTask(): Promise<boolean>;
+  /** Enter actual Lock Task only if a Device Owner already allowlisted Roddy and target. */
+  tryEnterHybridLockTask(targetPackage?: string | null): Promise<'locked' | 'allowlist_required' | 'pinned' | 'activity_unavailable' | 'start_failed'>;
   isInLockTaskMode(): Promise<boolean>;
   getLockTaskModeState(): Promise<number>;
   isDeviceOwner(): Promise<boolean>;
