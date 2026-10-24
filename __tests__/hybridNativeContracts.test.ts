@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Source-level integration guard for the Kotlin / JS native bridge.
  * Jest cannot execute Android DevicePolicyManager or WindowManager without a
