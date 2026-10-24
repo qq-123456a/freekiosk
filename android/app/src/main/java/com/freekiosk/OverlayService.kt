@@ -553,10 +553,23 @@ class OverlayService : Service() {
         }
         toolbar.addView(title, LinearLayout.LayoutParams(0, dp(34), 1f))
 
-        // TYPE_APPLICATION_OVERLAY cannot replace the system status/navigation
-        // bars. When the old Device Owner authorizes true Lock Task, Android
-        // removes system UI and this toolbar can occupy the top content region.
-        // Without that authorization the toolbar stays below the status bar.
+        // Native Android apps own their own Activity/window: FLAG_KEEP_SCREEN_ON
+        // on Roddy's MainActivity (used while Donation WebView is foreground)
+        // DOES NOT apply to Tanda. The employee HOME toolbar stays visible above
+        // Tanda, so its own WindowManager flag must hold the same screen-on policy.
+        //
+        // KioskModule.setKeepScreenOn() keeps this preference in SharedPreferences
+        // even while Roddy's Activity is behind Tanda. No permanent CPU wake lock
+        // and no interference with manual power-button sleep.
+        val keepScreenOn = getSharedPreferences("FreeKioskSettings", Context.MODE_PRIVATE)
+            .getBoolean("keep_screen_on", true)
+        val overlayWindowFlags =
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+            WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED or
+            (if (keepScreenOn) WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON else 0)
+
+        // TYPE_APPLICATION_OVERLAY cannot itself replace the system status bar.
+        // SystemUI visibility must come from Device Owner Lock Task feature flags.
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             dp(34),
@@ -565,10 +578,11 @@ class OverlayService : Service() {
             else
                 @Suppress("DEPRECATION")
                 WindowManager.LayoutParams.TYPE_SYSTEM_ALERT,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
+            overlayWindowFlags,
             PixelFormat.TRANSLUCENT
         ).apply { gravity = Gravity.TOP }
+
+        DebugLog.d("OverlayService", "Hybrid HOME toolbar keepScreenOn=$keepScreenOn")
 
         try {
             overlayView = toolbar
