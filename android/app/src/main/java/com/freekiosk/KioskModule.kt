@@ -657,6 +657,44 @@ class KioskModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
      *
      * Result: locked, allowlist_required, pinned, activity_unavailable, start_failed.
      */
+    /**
+     * Observe actual Android policy instead of inferring 'not allowlisted' from
+     * every possible failure. The existing (other-package) Device Owner may
+     * have SYSTEM_INFO/NOTIFICATIONS enabled even when both apps are allowed.
+     * Those policy flags cannot be changed by this non-owner application.
+     */
+    @ReactMethod
+    fun getHybridLockTaskStatus(targetPackage: String?, promise: Promise) {
+        try {
+            val dpm = reactApplicationContext.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+            val am = reactApplicationContext.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+            val ownPackage = reactApplicationContext.packageName
+            val ownOwner = dpm.isDeviceOwnerApp(ownPackage)
+            val result = Arguments.createMap().apply {
+                putBoolean("roddyIsOwner", ownOwner)
+                putBoolean("roddyAllowlisted", dpm.isLockTaskPermitted(ownPackage))
+                putBoolean("targetAllowlisted",
+                    !targetPackage.isNullOrBlank() && dpm.isLockTaskPermitted(targetPackage))
+                putString("mode", when (am.lockTaskModeState) {
+                    ActivityManager.LOCK_TASK_MODE_LOCKED -> "locked"
+                    ActivityManager.LOCK_TASK_MODE_PINNED -> "pinned"
+                    else -> "none"
+                })
+            }
+            if (ownOwner && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                try {
+                    val admin = ComponentName(reactApplicationContext, DeviceAdminReceiver::class.java)
+                    result.putInt("features", dpm.getLockTaskFeatures(admin))
+                } catch (e: Exception) {
+                    android.util.Log.w("KioskModule", "Unable to inspect owner lock task features: ${e.message}")
+                }
+            }
+            promise.resolve(result)
+        } catch (e: Exception) {
+            promise.reject("LOCK_TASK_STATUS_UNAVAILABLE", e)
+        }
+    }
+
     @ReactMethod
     fun tryEnterHybridLockTask(targetPackage: String?, promise: Promise) {
         try {
