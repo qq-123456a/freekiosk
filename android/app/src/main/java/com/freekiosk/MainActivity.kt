@@ -517,8 +517,28 @@ class MainActivity : ReactActivity() {
     Handler(Looper.getMainLooper()).postDelayed(pinningValveRunnable!!, JS_READY_GRACE_MS)
   }
 
+  /**
+   * A Hybrid Dashboard with native app tiles must never use ordinary screen
+   * pinning. Only enter full Lock Task after the already-installed Device Owner
+   * has allowlisted both this package and the selected native app.
+   */
+  private fun isHybridDashboardWithApps(): Boolean {
+    if (getAsyncStorageValue("@kiosk_display_mode", "webview") != "webview") return false
+    if (getAsyncStorageValue("@kiosk_dashboard_mode_enabled", "false") != "true") return false
+    return try {
+      val tiles = org.json.JSONArray(getAsyncStorageValue("@kiosk_dashboard_tiles", "[]"))
+      (0 until tiles.length()).any { i -> tiles.optJSONObject(i)?.optString("kind") == "app" }
+    } catch (_: Exception) {
+      false
+    }
+  }
+
   private fun checkAndStartLockTask() {
     val kioskEnabled = isKioskEnabled()
+    if (kioskEnabled && isHybridDashboardWithApps() && !devicePolicyManager.isDeviceOwnerApp(packageName)) {
+      DebugLog.d("MainActivity", "Hybrid Dashboard: skip screen pinning; waiting for owner-approved Lock Task")
+      return
+    }
     DebugLog.d("MainActivity", "Kiosk enabled: $kioskEnabled")
 
     if (kioskEnabled) {
