@@ -22,6 +22,16 @@ class OverlayServiceModule(reactContext: ReactApplicationContext) :
     @ReactMethod
     fun startOverlayService(tapCount: Int, tapTimeout: Int, returnMode: String, buttonPosition: String, lockedPackage: String?, autoRelaunch: Boolean, nfcEnabled: Boolean, promise: Promise) {
         try {
+            // The Hybrid Dashboard MUST have a visible HOME control before any
+            // third-party Android activity is opened. Never silently proceed.
+            if (returnMode == "hybrid_home" &&
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
+                !Settings.canDrawOverlays(reactApplicationContext)) {
+                promise.reject("OVERLAY_PERMISSION_REQUIRED",
+                    "Allow FreeKiosk Roddy to display over other apps before opening the selected app")
+                return
+            }
+
             // Démarrer le service même sans permission overlay
             // Le service peut toujours fonctionner en arrière-plan (timer test mode, retour auto)
             // L'overlay button ne sera simplement pas visible sans permission
@@ -47,7 +57,26 @@ class OverlayServiceModule(reactContext: ReactApplicationContext) :
             
             reactApplicationContext.startService(serviceIntent)
             DebugLog.d("OverlayServiceModule", "Started OverlayService with tapCount=$tapCount, tapTimeout=${tapTimeout}ms, mode=$returnMode, position=$buttonPosition")
-            promise.resolve(true)
+            if (returnMode == "hybrid_home") {
+                // startService() returning does NOT mean WindowManager.addView() worked.
+                // Wait for the Android window to attach, otherwise fail closed and
+                // keep the user in the existing Dashboard.
+                val handler = android.os.Handler(android.os.Looper.getMainLooper())
+                var checks = 0
+                fun verifyAttached() {
+                    if (OverlayService.isHybridOverlayReady()) {
+                        promise.resolve(true)
+                    } else if (++checks >= 10) {
+                        reactApplicationContext.stopService(serviceIntent)
+                        promise.reject("OVERLAY_NOT_VISIBLE", "Hybrid HOME toolbar could not be shown")
+                    } else {
+                        handler.postDelayed({ verifyAttached() }, 150L)
+                    }
+                }
+                handler.postDelayed({ verifyAttached() }, 150L)
+            } else {
+                promise.resolve(true)
+            }
         } catch (e: Exception) {
             DebugLog.errorProduction("OverlayServiceModule", "Error starting OverlayService: ${e.message}")
             promise.reject("ERROR", "Failed to start overlay service: ${e.message}")
