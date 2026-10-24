@@ -32,6 +32,7 @@ import {
 } from '../types/dashboard';
 import DashboardGrid from '../components/DashboardGrid';
 import { getWebTileAllowedPatterns, isAndroidDashboardTile } from '../utils/hybridDashboard';
+import { describeHybridFullscreenStatus } from '../utils/hybridFullscreen';
 import type { MediaItem, MediaFitMode } from '../types/mediaPlayer';
 import { ScreenScheduleRule, getNextWakeTime, getActiveSleepRule, getNextSleepTime } from '../types/screenScheduler';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -3009,21 +3010,53 @@ const KioskScreen: React.FC<KioskScreenProps> = ({ navigation }) => {
       // attached. Otherwise a missing overlay permission could trap employees
       // in a locked screen that offers no employee-safe navigation.
       if (finalReturnMode === 'hybrid_home') {
-        const lockResult = await KioskModule.tryEnterHybridLockTask(packageName).catch(() => 'start_failed');
+        // SINGLE APP PARITY: when Roddy IS Device Owner, use exactly the same
+        // native DevicePolicyManager setLockTaskPackages + setLockTaskFeatures
+        // + startLockTask path that FreeKiosk Single App already uses.
+        //
+        // Managed Apps allowlisting alone is not sufficient to hide Android's
+        // system information bar: the owner's SYSTEM_INFO and NOTIFICATIONS
+        // policy must be disabled too. Never try to change another app's
+        // Device Owner policy from Roddy.
+        const roddyIsOwner = await KioskModule.isDeviceOwner().catch(() => false);
+        const lockModeEnabled = await StorageService.getKioskEnabled().catch(() => false);
+        let lockResult: 'locked' | 'allowlist_required' | 'pinned' | 'activity_unavailable' | 'start_failed' = 'start_failed';
+        if (roddyIsOwner && lockModeEnabled) {
+          try {
+            const allowPowerButton = await StorageService.getAllowPowerButton();
+            // Reuse Single-App's OWNER path, including explicit app whitelist
+            // and no SYSTEM_INFO / NOTIFICATIONS. The persistent Dashboard
+            // still keeps the original HOME and admin PIN behavior.
+            await KioskModule.startLockTask(packageName, allowPowerButton, false, false, false);
+            lockResult = await KioskModule.tryEnterHybridLockTask(packageName);
+          } catch (e) {
+            console.warn('[HybridDashboard] Owner-managed Single App policy failed:', e);
+            lockResult = 'start_failed';
+          }
+        } else if (!roddyIsOwner) {
+          // Legacy FreeKiosk is still owner. We can join its approved Lock Task
+          // but CANNOT set its system-bar policy.
+          lockResult = await KioskModule.tryEnterHybridLockTask(packageName).catch(() => 'start_failed');
+        } else {
+          lockResult = 'start_failed';
+        }
+
+        const lockStatus = await KioskModule.getHybridLockTaskStatus(packageName).catch(() => null);
+        console.log('[HybridDashboard] Native fullscreen check:', lockResult, lockStatus);
+
         if (lockResult === 'pinned') {
           await OverlayServiceModule.stopOverlayService().catch(() => {});
-          Alert.alert(
-            'Screen pinning is active',
-            'Android screen pinning cannot switch between separate apps. Disable screen pinning, then allow the existing Device Owner to manage Roddy and Tanda.',
-          );
+          Alert.alert('Screen pinning cannot switch apps',
+            describeHybridFullscreenStatus(lockStatus) + ' Disable screen pinning before continuing.');
           return;
         }
         if (lockResult !== 'locked' && !hybridFullScreenHintShownRef.current) {
           hybridFullScreenHintShownRef.current = true;
           await OverlayServiceModule.stopOverlayService().catch(() => {});
-          Alert.alert(
-            'Full-screen Tanda needs Device Owner permission',
-            'To hide Android\'s top and bottom system bars, allow BOTH FreeKiosk Roddy (com.freekiosk.roddy) and Tanda in the existing Device Owner FreeKiosk Managed Apps list. Until then, Tanda can open but the Android system bars will remain visible.',
+          Alert.alert('Native App fullscreen diagnostics',
+            roddyIsOwner && !lockModeEnabled
+              ? 'Roddy is now Device Owner but Security > Lock Mode is OFF. Turn Lock Mode ON for the same fullscreen policy as Single App.'
+              : describeHybridFullscreenStatus(lockStatus),
             [
               { text: 'Cancel', style: 'cancel' },
               { text: 'Open with system bars', onPress: () => {
@@ -3035,10 +3068,10 @@ const KioskScreen: React.FC<KioskScreenProps> = ({ navigation }) => {
           return;
         }
         if (lockResult !== 'locked') {
-          console.log('[HybridDashboard] Device Owner full-screen mode unavailable: ' + lockResult);
+          // The user explicitly accepted the non-fullscreen compatibility mode.
+          console.warn('[HybridDashboard] Owner policy not active; keeping system bars:', lockResult);
         }
       }
-
 
       await AppLauncherModule.launchExternalApp(packageName);
       setIsAppLaunched(true);
