@@ -22,6 +22,23 @@ class AppLauncherModule(reactContext: ReactApplicationContext) : ReactContextBas
 
     @ReactMethod
     fun launchExternalApp(packageName: String, promise: Promise) {
+        launchAppInternal(packageName, false, promise)
+    }
+
+    /**
+     * Native Android tiles from the Roddy Hybrid Dashboard must use the same
+     * SystemUI policy as Single App kiosk mode, even when the saved global
+     * settings would otherwise re-enable Android status information.
+     *
+     * The ordinary launchExternalApp entry point is deliberately unchanged
+     * for upstream Single App, Multi App and background-launch callers.
+     */
+    @ReactMethod
+    fun launchHybridApp(packageName: String, promise: Promise) {
+        launchAppInternal(packageName, true, promise)
+    }
+
+    private fun launchAppInternal(packageName: String, hybridDashboard: Boolean, promise: Promise) {
         try {
             val pm = reactApplicationContext.packageManager
             val launchIntent = pm.launchIntentFor(packageName)
@@ -58,11 +75,17 @@ class AppLauncherModule(reactContext: ReactApplicationContext) : ReactContextBas
                                         cursor.close()
                                         
                                         val cursor2 = db.rawQuery("SELECT value FROM catalystLocalStorage WHERE key = ?", arrayOf("@kiosk_allow_notifications"))
-                                        val allowNotifications = if (cursor2.moveToFirst()) cursor2.getString(0) == "true" else false
+                                        val savedAllowNotifications = if (cursor2.moveToFirst()) cursor2.getString(0) == "true" else false
+                                        // The selected native Tanda activity must behave like the
+                                        // immersive WebView Dashboard. Without this override the
+                                        // generic launcher silently RE-ENABLED the status bar that
+                                        // KioskModule.startLockTask(... false, false ...) disabled.
+                                        val allowNotifications = !hybridDashboard && savedAllowNotifications
                                         cursor2.close()
                                         
                                         val cursor3 = db.rawQuery("SELECT value FROM catalystLocalStorage WHERE key = ?", arrayOf("@kiosk_allow_system_info"))
-                                        val allowSystemInfo = if (cursor3.moveToFirst()) cursor3.getString(0) == "true" else false
+                                        val savedAllowSystemInfo = if (cursor3.moveToFirst()) cursor3.getString(0) == "true" else false
+                                        val allowSystemInfo = !hybridDashboard && savedAllowSystemInfo
                                         cursor3.close()
                                         db.close()
                                         
@@ -96,7 +119,15 @@ class AppLauncherModule(reactContext: ReactApplicationContext) : ReactContextBas
                                     }
 
                                     dpm.setLockTaskFeatures(adminComponent, lockTaskFeatures)
-                                    DebugLog.d("AppLauncherModule", "Lock task features applied before launching external app")
+                                    DebugLog.d("AppLauncherModule", "Lock task features applied before launching external app (hybridDashboard=$hybridDashboard)")
+                                    if (hybridDashboard) {
+                                        val actualFlags = dpm.getLockTaskFeatures(adminComponent)
+                                        val visibleSystemUi = android.app.admin.DevicePolicyManager.LOCK_TASK_FEATURE_SYSTEM_INFO or
+                                            android.app.admin.DevicePolicyManager.LOCK_TASK_FEATURE_NOTIFICATIONS
+                                        if ((actualFlags and visibleSystemUi) != 0) {
+                                            throw IllegalStateException("Hybrid status bar flags unexpectedly enabled after policy update: $actualFlags")
+                                        }
+                                    }
                                 }
                                 
                                 // Mettre à jour la whitelist pour inclure cette app
@@ -116,7 +147,7 @@ class AppLauncherModule(reactContext: ReactApplicationContext) : ReactContextBas
 
                 // Lancer l'app via le context
                 reactApplicationContext.startActivity(launchIntent)
-                DebugLog.d("AppLauncherModule", "External app launched: $packageName")
+                DebugLog.d("AppLauncherModule", "External app launched: $packageName (hybridDashboard=$hybridDashboard)")
 
                 // Send event to React Native
                 sendEvent("onAppLaunched", null)
