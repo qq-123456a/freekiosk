@@ -117,6 +117,11 @@ class OverlayServiceModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
+    fun isHybridNativeAppSessionActive(promise: Promise) {
+        promise.resolve(OverlayService.isHybridNativeAppSessionActive())
+    }
+
+    @ReactMethod
     fun stopOverlayService(promise: Promise) {
         try {
             val serviceIntent = Intent(reactApplicationContext, OverlayService::class.java)
