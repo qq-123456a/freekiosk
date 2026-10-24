@@ -76,6 +76,23 @@ class OverlayService : Service() {
                 service.overlayView?.isAttachedToWindow == true
         }
 
+        /**
+         * Employee is currently in a native Android app launched from a Hybrid
+         * Dashboard tile. Its HOME overlay is the authoritative return control.
+         *
+         * The normal kiosk watchdog must NOT pull MainActivity over this app
+         * every 10 seconds, because Dashboard runs in WebView display mode.
+         *
+         * False as soon as the employee presses HOME: returnToHybridDashboard()
+         * clears lockedPackage and removes the overlay before returning home.
+         */
+        fun isHybridNativeAppSessionActive(): Boolean {
+            val service = instance ?: return false
+            return service.returnMode == "hybrid_home" &&
+                !service.lockedPackage.isNullOrBlank() &&
+                service.overlayView?.isAttachedToWindow == true
+        }
+
         fun updateButtonOpacity(opacity: Float) {
             buttonOpacity = opacity
             instance?.updateButtonAlpha()
