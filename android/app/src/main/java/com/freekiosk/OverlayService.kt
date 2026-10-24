@@ -85,6 +85,9 @@ class OverlayService : Service() {
             val service = instance ?: return
             Handler(Looper.getMainLooper()).post {
                 if (service.returnMode != "hybrid_home") return@post
+                // Update the scoped Tanda wake lock as well as the window flag.
+                // Setting OFF must release it immediately, without relaunching Tanda.
+                service.updateHybridScreenWakeLock(enabled)
                 val view = service.overlayView ?: return@post
                 val params = view.layoutParams as? WindowManager.LayoutParams ?: return@post
                 val flag = WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
@@ -181,6 +184,42 @@ class OverlayService : Service() {
 
     private var windowManager: WindowManager? = null
     private var overlayView: View? = null
+    // The Roddy Activity window stays awake for Donation; when Tanda is in front
+    // only the native HOME overlay is visible. Android recommends keeping the
+    // screen-awake window flag on an Activity, so keep a scoped Android 12
+    // compatibility wake lock only while the Hybrid Tanda session is active.
+    private var hybridScreenWakeLock: android.os.PowerManager.WakeLock? = null
+
+    @Suppress("DEPRECATION")
+    private fun updateHybridScreenWakeLock(enabled: Boolean) {
+        if (!enabled) {
+            hybridScreenWakeLock?.let { wakeLock ->
+                try {
+                    if (wakeLock.isHeld) wakeLock.release()
+                } catch (e: Exception) {
+                    DebugLog.e("OverlayService", "Could not release Hybrid screen wake lock: ${e.message}")
+                }
+            }
+            hybridScreenWakeLock = null
+            return
+        }
+        if (hybridScreenWakeLock?.isHeld == true) return
+        if (returnMode != "hybrid_home" || overlayView == null) return
+        try {
+            val power = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+            val wakeLock = power.newWakeLock(
+                android.os.PowerManager.SCREEN_BRIGHT_WAKE_LOCK,
+                "FreeKioskRoddy:HybridTimeClockScreenOn"
+            )
+            wakeLock.setReferenceCounted(false)
+            wakeLock.acquire()
+            hybridScreenWakeLock = wakeLock
+            DebugLog.d("OverlayService", "Hybrid Tanda screen wake lock acquired")
+        } catch (e: Exception) {
+            DebugLog.e("OverlayService", "Hybrid screen wake lock unavailable; relying on window flag: ${e.message}")
+        }
+    }
+
     private var indicatorView: View? = null  // Visual indicator in tap_anywhere mode
     private var returnButton: View? = null  // Changed from Button to View (now a FrameLayout)
     private var statusBarView: View? = null
@@ -612,9 +651,14 @@ class OverlayService : Service() {
         try {
             overlayView = toolbar
             windowManager?.addView(toolbar, params)
+            // The user's Keep Screen On preference must also cover Tanda's
+            // separate Android window. Hold the fallback only for this active
+            // native-app session, never for Donation or other background tasks.
+            updateHybridScreenWakeLock(keepScreenOn)
             DebugLog.d("OverlayService", "Hybrid Dashboard navigation attached")
         } catch (e: Exception) {
             overlayView = null
+            updateHybridScreenWakeLock(false)
             DebugLog.errorProduction("OverlayService", "Hybrid navigation unavailable: ${e.message}")
         }
     }
@@ -1843,6 +1887,9 @@ class OverlayService : Service() {
     }
 
     private fun destroyOverlay() {
+        // Release before removing the HOME overlay so stale service instances
+        // cannot keep the device awake after an employee returns to Dashboard.
+        updateHybridScreenWakeLock(false)
         try {
             DebugLog.d("OverlayService", "destroyOverlay() - statusBarView=${statusBarView != null}, overlayView=${overlayView != null}, indicatorView=${indicatorView != null}")
             
