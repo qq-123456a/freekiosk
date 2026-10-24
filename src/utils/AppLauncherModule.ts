@@ -12,6 +12,8 @@ export interface AppInfoAll extends AppInfo {
 
 interface IAppLauncherModule {
   launchExternalApp(packageName: string): Promise<boolean>;
+  /** Hybrid Dashboard native tile: do not re-enable Android status/notification bars. */
+  launchHybridApp(packageName: string): Promise<boolean>;
   isAppInstalled(packageName: string): Promise<boolean>;
   getInstalledApps(): Promise<AppInfo[]>;
   /** Returns all installed apps including non-UI user packages (fixes #112) */
