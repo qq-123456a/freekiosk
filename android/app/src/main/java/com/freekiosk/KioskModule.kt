@@ -647,6 +647,56 @@ class KioskModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
         }
     }
 
+    /**
+     * Hybrid Dashboard may be *permitted* to enter true lock-task mode by a
+     * separate Device Owner (for example the already-installed upstream FreeKiosk).
+     *
+     * NEVER call startLockTask without isLockTaskPermitted(): that path is only
+     * screen pinning, which cannot safely launch Tanda as a separate Android task.
+     * This method cannot write Device Owner policy or modify other packages.
+     *
+     * Result: locked, allowlist_required, pinned, activity_unavailable, start_failed.
+     */
+    @ReactMethod
+    fun tryEnterHybridLockTask(targetPackage: String?, promise: Promise) {
+        try {
+            val dpm = reactApplicationContext.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+            val ownPackage = reactApplicationContext.packageName
+            if (!dpm.isLockTaskPermitted(ownPackage) ||
+                (!targetPackage.isNullOrBlank() && !dpm.isLockTaskPermitted(targetPackage))) {
+                promise.resolve("allowlist_required")
+                return
+            }
+            val activity = reactApplicationContext.currentActivity as? MainActivity
+            if (activity == null) {
+                promise.resolve("activity_unavailable")
+                return
+            }
+            activity.runOnUiThread {
+                try {
+                    val am = reactApplicationContext.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+                    when (am.lockTaskModeState) {
+                        ActivityManager.LOCK_TASK_MODE_LOCKED -> promise.resolve("locked")
+                        ActivityManager.LOCK_TASK_MODE_PINNED -> promise.resolve("pinned")
+                        else -> {
+                            // The owner has already approved both packages; this is
+                            // true lock-task, not Android screen pinning.
+                            activity.startLockTask()
+                            val state = am.lockTaskModeState
+                            promise.resolve(if (state == ActivityManager.LOCK_TASK_MODE_LOCKED) "locked" else "start_failed")
+                        }
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.w("KioskModule", "Hybrid lock task unavailable: ${e.message}")
+                    promise.resolve("start_failed")
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("KioskModule", "Hybrid lock task preflight failed: ${e.message}")
+            promise.resolve("start_failed")
+        }
+    }
+
     @ReactMethod
     fun startLockTask(externalAppPackage: String?, allowPowerButton: Boolean, allowNotifications: Boolean, allowSystemInfo: Boolean, allowEmergencyCall: Boolean, promise: Promise) {
         try {
