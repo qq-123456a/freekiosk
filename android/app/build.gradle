@@ -113,8 +113,8 @@ android {
         applicationId "com.freekiosk.roddy"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 200006
-        versionName "2.0.0-beta.6-roddy.1"
+        versionCode 200007
+        versionName "2.0.0-beta.6-roddy.2"
 
         // Expose self-update flag to both Kotlin (BuildConfig) and JS (via UpdateModule constants)
         buildConfigField "boolean", "ENABLE_SELF_UPDATE", "${enableSelfUpdate}"
