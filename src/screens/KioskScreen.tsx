@@ -3023,11 +3023,19 @@ const KioskScreen: React.FC<KioskScreenProps> = ({ navigation }) => {
         let lockResult: 'locked' | 'allowlist_required' | 'pinned' | 'activity_unavailable' | 'start_failed' = 'start_failed';
         if (roddyIsOwner && lockModeEnabled) {
           try {
-            const allowPowerButton = await StorageService.getAllowPowerButton();
-            // Reuse Single-App's OWNER path, including explicit app whitelist
-            // and no SYSTEM_INFO / NOTIFICATIONS. The persistent Dashboard
-            // still keeps the original HOME and admin PIN behavior.
-            await KioskModule.startLockTask(packageName, allowPowerButton, false, false, false);
+            // Match the proven Single App owner path. Read the SAME Security
+            // preferences instead of hard-coding a second Hybrid policy.
+            // For the requested fullscreen layout, turn OFF Show System Info
+            // and Allow Notifications in Roddy Security settings.
+            const [allowPowerButton, allowNotifications, allowSystemInfo, allowEmergencyCall] = await Promise.all([
+              StorageService.getAllowPowerButton(),
+              StorageService.getAllowNotifications(),
+              StorageService.getAllowSystemInfo(),
+              StorageService.getLockscreenEmergencyCallEnabled(),
+            ]);
+            await KioskModule.startLockTask(
+              packageName, allowPowerButton, allowNotifications, allowSystemInfo, allowEmergencyCall,
+            );
             lockResult = await KioskModule.tryEnterHybridLockTask(packageName);
           } catch (e) {
             console.warn('[HybridDashboard] Owner-managed Single App policy failed:', e);
