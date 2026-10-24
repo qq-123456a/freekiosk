@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, StyleSheet, TouchableOpacity, TouchableWithoutFeedback, NativeEventEmitter, NativeModules, AppState, DeviceEventEmitter, Dimensions, Pressable, BackHandler, Keyboard } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, TouchableWithoutFeedback, NativeEventEmitter, NativeModules, AppState, DeviceEventEmitter, Dimensions, Pressable, BackHandler, Keyboard, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import RNBrightness from '../utils/BrightnessModule';
 import { useIsFocused, useFocusEffect } from '@react-navigation/native';
@@ -17,6 +17,7 @@ import { saveSecurePin, saveSecureMqttPassword, getSecureBasicAuthPassword } fro
 import KioskModule from '../utils/KioskModule';
 import AppLauncherModule from '../utils/AppLauncherModule';
 import OverlayServiceModule from '../utils/OverlayServiceModule';
+import OverlayPermissionModule from '../utils/OverlayPermissionModule';
 import BlockingOverlayModule from '../utils/BlockingOverlayModule';
 import AutoBrightnessModule from '../utils/AutoBrightnessModule';
 import { ApiService, MqttImageStream } from '../utils/ApiService';
@@ -2935,6 +2936,29 @@ const KioskScreen: React.FC<KioskScreenProps> = ({ navigation }) => {
       const finalReturnMode = mode ?? current.returnMode;
       const finalButtonPosition = buttonPos ?? current.returnButtonPosition;
 
+      // A Hybrid Dashboard app is unusable without a persistent HOME toolbar.
+      // Overlay permissions belong to this package and are NOT transferred
+      // from an existing FreeKiosk installation, even on the same tablet.
+      if (finalReturnMode === 'hybrid_home') {
+        const hasOverlayPermission = await OverlayPermissionModule.canDrawOverlays()
+          .catch(() => false);
+        if (!hasOverlayPermission) {
+          Alert.alert(
+            'Floating HOME permission required',
+            'Allow FreeKiosk Roddy to display over other apps. This keeps HOME and Back visible above Tanda so staff can return to Donation.',
+            [
+              { text: 'Not now', style: 'cancel' },
+              { text: 'Open Settings', onPress: () => {
+                OverlayPermissionModule.requestOverlayPermission().catch(error =>
+                  console.warn('[HybridDashboard] Unable to open overlay permission settings:', error)
+                );
+              } },
+            ],
+          );
+          return;
+        }
+      }
+
       // Start OverlayService BEFORE launching the external app
       try {
         await OverlayServiceModule.startOverlayService(
@@ -2949,7 +2973,16 @@ const KioskScreen: React.FC<KioskScreenProps> = ({ navigation }) => {
         console.log(`[KioskScreen] OverlayService started with tapCount=${finalTapCount}, tapTimeout=${finalTapTimeout}, mode=${finalReturnMode}, position=${finalButtonPosition}, package=${packageName}, autoRelaunch=${current.autoRelaunchApp}, nfcEnabled=${current.allowNotifications}`);
       } catch (overlayError) {
         console.warn('[KioskScreen] Failed to start overlay service:', overlayError);
-        // Continue anyway — the external app can still be launched
+        if (finalReturnMode === 'hybrid_home') {
+          // Critical: do NOT strand staff in Tanda without HOME navigation.
+          await OverlayServiceModule.stopOverlayService().catch(() => {});
+          Alert.alert(
+            'Unable to show HOME toolbar',
+            'The floating navigation could not be displayed. Check the Display over other apps permission for FreeKiosk Roddy, then try again.',
+          );
+          return;
+        }
+        // Preserve the original behavior for existing non-hybrid external-app modes.
       }
 
       await AppLauncherModule.launchExternalApp(packageName);
