@@ -34,6 +34,8 @@ describe('Hybrid native app integration contract', () => {
     expect(overlay).toContain('.getBoolean("keep_screen_on", true)');
     expect(overlay).toContain('if (keepScreenOn) WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON else 0');
     expect(overlay).toContain('overlayWindowFlags,');
+    expect(overlay).toContain('fun updateHybridKeepScreenOn(enabled: Boolean)');
+    expect(kiosk).toContain('OverlayService.updateHybridKeepScreenOn(enabled)');
   });
 
   it('keeps Hybrid HOME visible while a separate Android app is foreground', () => {
