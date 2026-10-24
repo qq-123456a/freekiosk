@@ -3073,7 +3073,14 @@ const KioskScreen: React.FC<KioskScreenProps> = ({ navigation }) => {
         }
       }
 
-      await AppLauncherModule.launchExternalApp(packageName);
+      // Native Dashboard tiles have their own launch path: the generic app
+      // launcher re-applies saved Lock Task features after our fullscreen setup
+      // and can restore the grey Android status bar over Tanda.
+      if (finalReturnMode === 'hybrid_home') {
+        await AppLauncherModule.launchHybridApp(packageName);
+      } else {
+        await AppLauncherModule.launchExternalApp(packageName);
+      }
       setIsAppLaunched(true);
     } catch (error) {
       console.error('[KioskScreen] Failed to launch app:', error);
