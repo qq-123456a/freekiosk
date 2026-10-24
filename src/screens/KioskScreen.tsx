@@ -3084,6 +3084,13 @@ const KioskScreen: React.FC<KioskScreenProps> = ({ navigation }) => {
       setIsAppLaunched(true);
     } catch (error) {
       console.error('[KioskScreen] Failed to launch app:', error);
+      if (mode === 'hybrid_home') {
+        // The HOME overlay includes a scoped screen wake lock. A rejected native
+        // launch must tear down the whole Hybrid session rather than leaving an
+        // empty overlay and an awake screen over Dashboard.
+        await OverlayServiceModule.stopOverlayService().catch(() => {});
+        Alert.alert('Unable to open Android app', 'Tanda could not be launched. The Dashboard remains available; check the installed app and Lock Mode.');
+      }
     }
   };
 
