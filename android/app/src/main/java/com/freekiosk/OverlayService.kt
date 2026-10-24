@@ -484,54 +484,65 @@ class OverlayService : Service() {
         val density = resources.displayMetrics.density
         fun dp(value: Int): Int = (value * density + 0.5f).toInt()
 
+        // Mirror the existing Dashboard strip: dark background, Back, Forward,
+        // Refresh, HOME, then the page/app title. Forward and Refresh are inert
+        // for third-party native apps (there is no web navigation history).
         val toolbar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setBackgroundColor(Color.argb(225, 0, 0, 0))
+            setBackgroundColor(Color.rgb(29, 29, 29))
         }
 
-        val back = TextView(this).apply {
-            text = "‹"
-            textSize = 25f
-            gravity = Gravity.CENTER
-            setTextColor(Color.WHITE)
-            contentDescription = "Back"
-            setOnClickListener {
-                // AccessibilityService is optional. Fail closed if Back cannot be sent;
-                // do not open system settings or the Android launcher.
-                if (!FreeKioskAccessibilityService.sendKey(android.view.KeyEvent.KEYCODE_BACK)) {
-                    // Without accessibility service, ordinary apps cannot inject Back
-                    // into another process. Return to the safe Dashboard instead of
-                    // leaving a visible but non-functional control.
-                    DebugLog.d("OverlayService", "Hybrid Back unavailable; returning to Dashboard")
-                    returnToHybridDashboard()
-                }
+        fun addNavigationControl(symbol: String, description: String, enabled: Boolean, onTap: () -> Unit) {
+            val view = TextView(this).apply {
+                text = symbol
+                textSize = 22f
+                gravity = Gravity.CENTER
+                setTextColor(if (enabled) Color.WHITE else Color.rgb(109, 109, 109))
+                contentDescription = description
+                isEnabled = enabled
+                if (enabled) setOnClickListener { onTap() }
+            }
+            toolbar.addView(view, LinearLayout.LayoutParams(dp(42), dp(34)))
+        }
+
+        addNavigationControl("←", "Back", true) {
+            if (!FreeKioskAccessibilityService.sendKey(android.view.KeyEvent.KEYCODE_BACK)) {
+                DebugLog.d("OverlayService", "Native Back unavailable, returning to Dashboard")
+                returnToHybridDashboard()
             }
         }
-        toolbar.addView(back, LinearLayout.LayoutParams(dp(42), dp(36)))
-
-        val home = TextView(this).apply {
-            text = "⌂"
-            textSize = 23f
-            gravity = Gravity.CENTER
-            setTextColor(Color.WHITE)
-            contentDescription = "HOME - Hybrid Dashboard"
-            setOnClickListener { returnToHybridDashboard() }
+        addNavigationControl("→", "Forward unavailable in Android app", false) {}
+        addNavigationControl("⟳", "Refresh unavailable in Android app", false) {}
+        addNavigationControl("⌂", "HOME - Hybrid Dashboard", true) {
+            returnToHybridDashboard()
         }
-        toolbar.addView(home, LinearLayout.LayoutParams(dp(42), dp(36)))
 
         val title = TextView(this).apply {
-            text = "Dashboard"
+            text = try {
+                val pkg = lockedPackage
+                if (pkg.isNullOrBlank()) "Android App"
+                else packageManager.getApplicationLabel(
+                    packageManager.getApplicationInfo(pkg, 0)
+                ).toString()
+            } catch (_: Exception) {
+                "Android App"
+            }
             textSize = 13f
             gravity = Gravity.CENTER_VERTICAL
             setTextColor(Color.WHITE)
             setPadding(dp(6), 0, 0, 0)
+            maxLines = 1
         }
-        toolbar.addView(title, LinearLayout.LayoutParams(0, dp(36), 1f))
+        toolbar.addView(title, LinearLayout.LayoutParams(0, dp(34), 1f))
 
+        // TYPE_APPLICATION_OVERLAY cannot replace the system status/navigation
+        // bars. When the old Device Owner authorizes true Lock Task, Android
+        // removes system UI and this toolbar can occupy the top content region.
+        // Without that authorization the toolbar stays below the status bar.
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
-            dp(36),
+            dp(34),
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             else
@@ -545,10 +556,10 @@ class OverlayService : Service() {
         try {
             overlayView = toolbar
             windowManager?.addView(toolbar, params)
-            DebugLog.d("OverlayService", "Hybrid Dashboard toolbar attached")
+            DebugLog.d("OverlayService", "Hybrid Dashboard navigation attached")
         } catch (e: Exception) {
             overlayView = null
-            DebugLog.errorProduction("OverlayService", "Hybrid toolbar unavailable: ${e.message}")
+            DebugLog.errorProduction("OverlayService", "Hybrid navigation unavailable: ${e.message}")
         }
     }
 
