@@ -249,6 +249,19 @@ class KioskWatchdogService : Service() {
 
         if (isMainActivityRunning()) return  // FreeKiosk itself is in foreground — fine
 
+        // Hybrid Dashboard is configured as display_mode=webview, but the selected
+        // Tanda tile is a genuine external Android activity. The old watchdog
+        // treated it as a stray window and forcibly reopened Dashboard after
+        // CHECK_INTERVAL_MS (10 seconds), exactly the reported behavior.
+        //
+        // Trust only a visible, active Hybrid HOME overlay session. Existing
+        // WebView Donation behavior and normal external_app monitoring remain
+        // unchanged, and an explicit HOME click clears this state immediately.
+        if (getDisplayMode() == "webview" && OverlayService.isHybridNativeAppSessionActive()) {
+            DebugLog.d(TAG, "Hybrid native tile active — preserving Tanda foreground")
+            return
+        }
+
         // #268: with "Allow the USB Debugging Prompt In Lock Mode" on, the "Allow USB
         // debugging?" prompt (an activity of SystemUI) is let through by lock task, but it
         // takes the foreground from MainActivity, so the checks below would drag the kiosk
