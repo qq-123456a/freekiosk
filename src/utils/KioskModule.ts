@@ -6,6 +6,14 @@ interface KioskModuleInterface {
   stopLockTask(): Promise<boolean>;
   /** Enter actual Lock Task only if a Device Owner already allowlisted Roddy and target. */
   tryEnterHybridLockTask(targetPackage?: string | null): Promise<'locked' | 'allowlist_required' | 'pinned' | 'activity_unavailable' | 'start_failed'>;
+  /** Actual Android state; can differ from the Managed Apps UI until the owner reapplies its policy. */
+  getHybridLockTaskStatus(targetPackage?: string | null): Promise<{
+    roddyIsOwner: boolean;
+    roddyAllowlisted: boolean;
+    targetAllowlisted: boolean;
+    mode: 'none' | 'pinned' | 'locked';
+    features?: number;
+  }>;
   isInLockTaskMode(): Promise<boolean>;
   getLockTaskModeState(): Promise<number>;
   isDeviceOwner(): Promise<boolean>;
