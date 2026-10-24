@@ -77,6 +77,31 @@ class OverlayService : Service() {
         }
 
         /**
+         * Roddy Settings/remote config may change Keep Screen On while Tanda is
+         * already in foreground. Apply the setting to the still-visible native
+         * HOME toolbar, not just to the backgrounded MainActivity window.
+         */
+        fun updateHybridKeepScreenOn(enabled: Boolean) {
+            val service = instance ?: return
+            Handler(Looper.getMainLooper()).post {
+                if (service.returnMode != "hybrid_home") return@post
+                val view = service.overlayView ?: return@post
+                val params = view.layoutParams as? WindowManager.LayoutParams ?: return@post
+                val flag = WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+                val wasEnabled = (params.flags and flag) != 0
+                if (wasEnabled != enabled) {
+                    params.flags = if (enabled) params.flags or flag else params.flags and flag.inv()
+                    try {
+                        service.windowManager?.updateViewLayout(view, params)
+                        DebugLog.d("OverlayService", "Hybrid Keep Screen On updated to $enabled")
+                    } catch (e: Exception) {
+                        DebugLog.e("OverlayService", "Hybrid Keep Screen On update failed: ${e.message}")
+                    }
+                }
+            }
+        }
+
+        /**
          * Employee is currently in a native Android app launched from a Hybrid
          * Dashboard tile. Its HOME overlay is the authoritative return control.
          *
