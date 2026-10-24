@@ -587,11 +587,11 @@ class OverlayService : Service() {
             toolbar.addView(view, LinearLayout.LayoutParams(dp(42), dp(34)))
         }
 
-        addNavigationControl("←", "Back", true) {
-            if (!FreeKioskAccessibilityService.sendKey(android.view.KeyEvent.KEYCODE_BACK)) {
-                DebugLog.d("OverlayService", "Native Back unavailable, returning to Dashboard")
-                returnToHybridDashboard()
-            }
+        // The ONLY difference from Single App return handling: the employee's
+        // Back and HOME controls return to the original Roddy Dashboard grid.
+        // No accessibility key injection, Android launcher, or admin PIN entry.
+        addNavigationControl("←", "Back to Dashboard", true) {
+            returnToHybridDashboard()
         }
         addNavigationControl("→", "Forward unavailable in Android app", false) {}
         addNavigationControl("⟳", "Refresh unavailable in Android app", false) {}
