@@ -1,9 +1,21 @@
-import { getWebTileAllowedPatterns, isAndroidDashboardTile } from '../src/utils/hybridDashboard';
+import { filterInstalledApps, getWebTileAllowedPatterns, isAndroidDashboardTile } from '../src/utils/hybridDashboard';
 import type { DashboardTile } from '../src/types/dashboard';
 
 const legacyTile: DashboardTile = { id: '1', label: 'Donation', url: 'https://donations.example.com/dashboard', iconMode: 'letter', order: 0 };
 
 describe('Hybrid Dashboard compatibility and access policy', () => {
+  it('discovers launchable apps by display name or package, including Tanda', () => {
+    const apps = [
+      { appName: 'Tanda Time Clock', packageName: 'co.tanda.timeclock', hasLauncherActivity: true },
+      { appName: 'Other Application', packageName: 'org.example.other', hasLauncherActivity: true },
+      { appName: 'Background Service', packageName: 'org.example.service', hasLauncherActivity: false },
+    ];
+    expect(filterInstalledApps(apps, 'tanda').map(a => a.packageName)).toEqual(['co.tanda.timeclock']);
+    expect(filterInstalledApps(apps, 'co.tanda').map(a => a.appName)).toEqual(['Tanda Time Clock']);
+    expect(filterInstalledApps(apps, '').map(a => a.packageName)).not.toContain('org.example.service');
+    expect(filterInstalledApps(apps, '', true)).toHaveLength(3);
+  });
+
   it('keeps legacy dashboard entries as websites', () => {
     expect(isAndroidDashboardTile(legacyTile)).toBe(false);
     expect(getWebTileAllowedPatterns(legacyTile)).toEqual(['https://donations.example.com/*']);
