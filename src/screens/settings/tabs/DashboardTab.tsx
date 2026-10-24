@@ -17,6 +17,7 @@ import {
 import { getTileColor, MATERIAL_PALETTE } from '../../../utils/dashboardColors';
 import { StorageService } from '../../../utils/storage';
 import { createManagedApp, isValidPackageName } from '../../../types/managedApps';
+import InstalledAppPicker from '../../../components/InstalledAppPicker';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useTranslation } from 'react-i18next';
 
@@ -42,6 +43,7 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ dashboardModeEnabled }) => 
   const [editUrl, setEditUrl] = useState('');
   const [editKind, setEditKind] = useState<'web' | 'app'>('web');
   const [editPackageName, setEditPackageName] = useState('');
+  const [showInstalledAppPicker, setShowInstalledAppPicker] = useState(false);
   const [editRestrictNavigation, setEditRestrictNavigation] = useState(true);
   const [editAllowedOrigins, setEditAllowedOrigins] = useState('');
   const [defaultApp, setDefaultApp] = useState('');
@@ -308,6 +310,15 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ dashboardModeEnabled }) => 
         />
       </SettingsSection>
 
+      <InstalledAppPicker
+        visible={showInstalledAppPicker && showEditor && editKind === 'app'}
+        selectedPackage={editPackageName}
+        onClose={() => setShowInstalledAppPicker(false)}
+        onSelect={(app) => {
+          setEditPackageName(app.packageName);
+          if (!editLabel.trim()) setEditLabel(app.appName);
+        }}
+      />
       {showEditor && (
         <SettingsSection title={editingTile ? t('dashboard.editTile') : t('dashboard.newTile')} icon="pencil">
           <SettingsInput
@@ -327,7 +338,15 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ dashboardModeEnabled }) => 
           </View>
           <View style={styles.editorSpacer} />
           {editKind === 'app' ? (
-            <SettingsInput label="Android Package" value={editPackageName} onChangeText={setEditPackageName} placeholder="co.tanda.timeclock" />
+            <TouchableOpacity style={styles.appPickerButton} onPress={() => setShowInstalledAppPicker(true)}
+              accessibilityLabel="Choose installed Android application">
+              <MaterialCommunityIcons name="apps" size={22} color={Colors.primary} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.appPickerTitle}>{editPackageName ? 'Selected application' : 'Choose installed application'}</Text>
+                <Text style={styles.appPickerPackage}>{editPackageName || 'Tap to browse installed apps'}</Text>
+              </View>
+              <MaterialCommunityIcons name="chevron-right" size={22} color={Colors.textSecondary} />
+            </TouchableOpacity>
           ) : (
             <SettingsInput label={t('dashboard.url')} value={editUrl} onChangeText={setEditUrl} placeholder={t('dashboard.urlPlaceholder')} keyboardType="url" />
           )}
@@ -446,6 +465,9 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ dashboardModeEnabled }) => 
 };
 
 const styles = StyleSheet.create({
+  appPickerButton: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: Colors.border, borderRadius: 10, padding: 14, backgroundColor: Colors.surface },
+  appPickerTitle: { ...Typography.label, color: Colors.textPrimary },
+  appPickerPackage: { ...Typography.hint, fontSize: 11, marginTop: 3 },
   infoText: {
     ...Typography.body,
     lineHeight: 22,
